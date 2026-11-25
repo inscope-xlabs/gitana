@@ -451,18 +451,9 @@ No production release until the relay trust profile is explicitly selected and d
 
 No production release until credential backup exclusion, rotation, and revocation are tested.
 
-## 14. Open decisions requiring owner confirmation
+## 14. Resolved owner decisions
 
-| Decision | Recommended default |
-| --- | --- |
-| Local HTTP port | Configurable, non-privileged port; show actual bound address/port in UI. |
-| Local authentication | Independently provisioned high-entropy local token with short-lived pairing/bootstrap flow; never reuse relay secret. |
-| IPv6 loopback | Support ::1 if the selected Ktor/server stack and shell clients require it; never wildcard bind. |
-| Relay security profile | Start with explicitly trusted-relay profile; do not claim end-to-end secrecy until E2E design is reviewed. |
-| Destructive confirmation | Require user approval for delete_file by default. |
-| PR confirmation | User-configurable; confirmation required by default for initial release. |
-| Offline queue | Do not queue write payloads by default; retain only bounded lifecycle metadata and reconcile unknown outcomes. |
-| File limits | Choose numeric limits after device memory/performance testing; make them configurable with conservative defaults. |
+All items previously listed as open decisions have been resolved. The final choices are recorded in the Decision Log (Appendix D). Corresponding “open decision” / “to be finalized” language has been removed from this document.
 
 ## 15. Version 2 summary
 
@@ -472,7 +463,7 @@ The local interface is intentionally independent of Cloudflare and remote-agent 
 
 The system makes no unsupported exactly-once or uninterrupted-service guarantees. It uses request IDs, deduplication, explicit lifecycle states, safe reconciliation of uncertain writes, bounded retries, and clear outcome reporting. It stores no Git working tree and no persistent repository-content cache.
 
-This document is a review-ready architecture specification. Implementation details such as exact port, numeric limits, Android minimum/target SDK, API version pin, relay cryptographic profile, and final schemas remain explicit decisions to be finalized before implementation.
+This document is a review-ready architecture specification. Owner decisions (port policy, local authentication, IPv6 loopback, relay security profile, confirmation defaults, offline queue policy, numeric limits starting points, Android SDK levels, and GitHub API version pin) are recorded in Appendix D. Remaining work before an approved baseline is limited to contract schemas, policy detail, validation gates, and document hygiene listed in the companion exit-tasks document.
 
 ## Appendix A — Example canonical request envelope
 
@@ -524,3 +515,17 @@ GitHub REST API — Pull requests: https://docs.github.com/en/rest/pulls/pulls
 GitHub REST API — Rate limits: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 
 Cloudflare Durable Objects — WebSockets: https://developers.cloudflare.com/durable-objects/best-practices/websockets/
+
+## Appendix D — Decision Log (owner decisions, 25 November 2026)
+
+| # | Decision | Chosen value / policy |
+| --- | --- | --- |
+| 1 | Local HTTP port | Configurable non-privileged port. Actual bound address:port always shown in UI. Never bind <1024. |
+| 2 | Local authentication & pairing | Independently provisioned high-entropy bearer token (≥256 bits entropy, e.g. 32-byte random → base64url). Short-lived pairing/bootstrap flow that issues the long-lived token. Stored in Keystore-backed private app storage. Independently revocable/rotatable. Never placed in URLs, query strings, command-line args, shell history, or logs. |
+| 3 | IPv6 loopback | Support `::1` when the server stack and target shell runtimes can use it. Still bind only to loopback addresses (never `::` or any non-loopback interface). |
+| 4 | Relay security profile | **Trusted-relay** profile for initial release. Explicitly document that the relay can see and potentially modify frames it terminates. End-to-end protected profile deferred until full design + independent cryptographic review. |
+| 5 | Confirmation defaults | `delete_file`: require user confirmation by default.<br>`create_pull_request`: require user confirmation by default (user-configurable later). |
+| 6 | Offline queue policy | **No** write-payload queueing. Retain only bounded lifecycle metadata; reconcile unknown outcomes on reconnect. |
+| 7 | Numeric limits (starting conservative defaults; tune after device testing) | Request body / file size: 1–4 MiB<br>Response size: 4–8 MiB<br>WebSocket frame: 1 MiB<br>Concurrent in-flight requests: 2–4<br>Read/write timeouts: 30–60 s<br>Rate limits: modest per-principal + global (e.g. \~30 req/min local)<br>Backoff: exponential with jitter, capped<br>Audit retention: 7–30 days of metadata only (no content) |
+| 8 | Android SDK & foreground-service type | minSdk 26 (or 28 if Keystore / FGS features require it); targetSdk latest stable (34/35). Use the appropriate foreground-service type for a long-running local HTTP + optional WebSocket service (document the exact type chosen; likely `specialUse` or closest matching type). |
+| 9 | GitHub REST API version header | Pin to a concrete, currently supported date-based version (record the exact value at implementation time). Do not float on “latest”. |

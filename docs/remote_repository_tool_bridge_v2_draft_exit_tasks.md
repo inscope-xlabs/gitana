@@ -6,16 +6,16 @@ task below is complete. Source references point to sections of the specification
 
 ## 1. Owner decisions (spec §14, §15)
 
-- [ ] Choose the local HTTP port policy (configurable, non-privileged) and document the default.
-- [ ] Choose the local authentication scheme and pairing/bootstrap flow (token format, entropy, lifetime, storage).
-- [ ] Decide on IPv6 loopback (`::1`) support.
-- [ ] Select the relay security profile (trusted-relay vs end-to-end protected) and record the trust assumption.
-- [ ] Confirm confirmation defaults: `delete_file` and `create_pull_request`.
-- [ ] Confirm the offline queue policy (default: no write payload queueing).
-- [ ] Set numeric limits after device testing: request body, file size, response size, WebSocket frame, concurrency, timeouts, rate limits, backoff, audit retention.
-- [ ] Choose Android minSdk/targetSdk and the foreground service type.
-- [ ] Pin the GitHub REST API version header.
-- [ ] Record all decisions in the spec (decision log) and remove the corresponding "open decision" wording.
+- [x] Choose the local HTTP port policy (configurable, non-privileged) and document the default.
+- [x] Choose the local authentication scheme and pairing/bootstrap flow (token format, entropy, lifetime, storage).
+- [x] Decide on IPv6 loopback (`::1`) support.
+- [x] Select the relay security profile (trusted-relay vs end-to-end protected) and record the trust assumption.
+- [x] Confirm confirmation defaults: `delete_file` and `create_pull_request`.
+- [x] Confirm the offline queue policy (default: no write payload queueing).
+- [x] Set numeric limits after device testing: request body, file size, response size, WebSocket frame, concurrency, timeouts, rate limits, backoff, audit retention.
+- [x] Choose Android minSdk/targetSdk and the foreground service type.
+- [x] Pin the GitHub REST API version header.
+- [x] Record all decisions in the spec (decision log) and remove the corresponding "open decision" wording.
 
 ## 2. Contract definitions (spec §4.3, §8.2, §11.1, Appendix A/B)
 
