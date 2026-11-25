@@ -19,12 +19,12 @@ task below is complete. Source references point to sections of the specification
 
 ## 2. Contract definitions (spec §4.3, §8.2, §11.1, Appendix A/B)
 
-- [ ] Publish machine-readable schemas (JSON Schema or OpenAPI) for the Tool Contract: all six operations, inputs, outputs, side effects.
+- [x] Publish machine-readable schemas (JSON Schema or OpenAPI) for the Tool Contract: all six operations, inputs, outputs, side effects. (`bridge/contracts/SCHEMAS.md`)
 - [ ] Define the Local Transport Contract: base path, headers, auth, limits, timeouts, and whether submission is synchronous or accepted-then-poll (Appendix B).
 - [ ] Define the canonical request/response envelope and replace the "illustrative" Appendix A.
 - [ ] Define the full error code catalog and mapping to `category`, `http_status`, `retryable`, `execution_state`.
 - [ ] Define the Execution Lifecycle Contract, including `MANUAL_REVIEW`, `CANCELLED` and a per-operation delivery guarantee (spec §8.1). Reconcile the state table with the contract list.
-- [ ] Define the Authorization Contract, Credential Contract and Audit Event Contract schemas.
+- [x] Define the Authorization Contract, Credential Contract and Audit Event Contract schemas. (`bridge/contracts/SCHEMAS.md`)
 - [ ] Define contract versioning and unknown-field compatibility rules.
 - [ ] Define the Relay Transport Contract: device identity, session binding, expiry, replay detection, sequence/correlation, acknowledgements.
 - [ ] If the end-to-end profile is chosen: specify key agreement, identity binding, nonce/sequence rules, authenticated encryption, rotation and recovery, then obtain independent cryptographic review.

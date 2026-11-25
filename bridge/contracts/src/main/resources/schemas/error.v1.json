@@ -2,6 +2,113 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:gitbridge:schema:error.v1",
   "title": "Error Contract",
-  "description": "SCAFFOLD: placeholder. Source of truth for this contract; replace with the real schema (see docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md).",
-  "type": "object"
+  "description": "Error contract (spec 11.1). The code set is the initial catalog in ErrorCode.kt; the full catalog is still an open task.",
+  "$defs": {
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "AUTH_FAILED",
+        "POLICY_DENIED",
+        "VALIDATION_FAILED",
+        "EXPIRED",
+        "NOT_FOUND",
+        "RATE_LIMITED",
+        "PAYLOAD_TOO_LARGE",
+        "CONFLICT",
+        "UPSTREAM_UNAVAILABLE",
+        "OUTCOME_UNKNOWN",
+        "NOT_IMPLEMENTED",
+        "INTERNAL"
+      ]
+    },
+    "ErrorCategory": {
+      "type": "string",
+      "enum": [
+        "VALIDATION",
+        "AUTHENTICATION",
+        "AUTHORIZATION",
+        "POLICY",
+        "TRANSPORT",
+        "PROVIDER",
+        "RESOURCE_LIMIT",
+        "INTERNAL"
+      ]
+    },
+    "ExecutionState": {
+      "type": "string",
+      "enum": [
+        "NOT_STARTED",
+        "EXECUTING",
+        "SUCCEEDED",
+        "FAILED",
+        "OUTCOME_UNKNOWN"
+      ]
+    },
+    "BridgeError": {
+      "type": "object",
+      "required": [
+        "code",
+        "category",
+        "retryable",
+        "execution_state",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "category": {
+          "$ref": "#/$defs/ErrorCategory"
+        },
+        "http_status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599,
+          "description": "Local HTTP status, where applicable."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Whether retry is safe and recommended."
+        },
+        "execution_state": {
+          "$ref": "#/$defs/ExecutionState"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Sanitized, user-readable. Must not contain credentials, file content or raw upstream bodies."
+        },
+        "correlation_id": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/CorrelationId"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "OUTCOME_UNKNOWN"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "execution_state": {
+                "const": "OUTCOME_UNKNOWN"
+              },
+              "retryable": {
+                "const": false
+              }
+            },
+            "description": "RTB-44: an unknown outcome must be reconciled before any retry."
+          }
+        }
+      ]
+    }
+  }
 }

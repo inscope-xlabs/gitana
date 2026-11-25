@@ -2,6 +2,590 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:gitbridge:schema:tool-contract.v1",
   "title": "Tool Contract",
-  "description": "SCAFFOLD: placeholder. Source of truth for this contract; replace with the real schema (see docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md).",
-  "type": "object"
+  "description": "The six canonical operations (spec 7) with their arguments and results, plus the request and response envelopes (spec 8.2). No operation accepts a raw endpoint, host, HTTP method or API path (RTB-15). Where a write needs a blob or file SHA, the phone resolves it internally (spec 7.1).",
+  "x-operations": {
+    "list_branches": {
+      "mutating": false,
+      "destructive": false,
+      "result": "BranchList"
+    },
+    "create_branch": {
+      "mutating": true,
+      "destructive": false,
+      "result": "BranchCreated"
+    },
+    "read_file": {
+      "mutating": false,
+      "destructive": false,
+      "result": "FileContent"
+    },
+    "write_file": {
+      "mutating": true,
+      "destructive": false,
+      "result": "FileWritten"
+    },
+    "delete_file": {
+      "mutating": true,
+      "destructive": true,
+      "result": "FileDeleted"
+    },
+    "create_pull_request": {
+      "mutating": true,
+      "destructive": false,
+      "result": "PullRequestCreated"
+    }
+  },
+  "$defs": {
+    "Operation": {
+      "type": "string",
+      "enum": [
+        "list_branches",
+        "create_branch",
+        "read_file",
+        "write_file",
+        "delete_file",
+        "create_pull_request"
+      ]
+    },
+    "ListBranchesArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo"
+      ],
+      "properties": {
+        "repo": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "CreateBranchArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "base",
+        "new_branch"
+      ],
+      "properties": {
+        "repo": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
+        },
+        "base": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+        },
+        "new_branch": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+        }
+      }
+    },
+    "ReadFileArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "path",
+        "ref"
+      ],
+      "properties": {
+        "repo": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
+        },
+        "path": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepoPath"
+        },
+        "ref": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitRef"
+        }
+      }
+    },
+    "WriteFileArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "path",
+        "content",
+        "branch",
+        "message"
+      ],
+      "properties": {
+        "repo": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
+        },
+        "path": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepoPath"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 2097152,
+          "description": "Coarse character cap. The byte limit (DV-RTB-REQUEST-MAX-BYTES) is enforced before parsing. Never logged."
+        },
+        "branch": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    },
+    "DeleteFileArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "path",
+        "branch",
+        "message"
+      ],
+      "properties": {
+        "repo": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
+        },
+        "path": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepoPath"
+        },
+        "branch": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    },
+    "CreatePullRequestArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "head",
+        "base",
+        "title"
+      ],
+      "properties": {
+        "repo": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
+        },
+        "head": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitRef",
+          "description": "Head branch. Head owner/branch syntax is an open task (exit tasks section 3)."
+        },
+        "base": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      }
+    },
+    "BranchList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branches",
+        "has_more"
+      ],
+      "properties": {
+        "branches": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+          }
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BranchCreated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "sha"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "sha": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitSha"
+        }
+      }
+    },
+    "FileContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "ref",
+        "sha",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepoPath"
+        },
+        "ref": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitRef"
+        },
+        "sha": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitSha"
+        },
+        "content": {
+          "type": "string",
+          "description": "Decoded text content. Binary or oversized content is an error, not a result. Never logged."
+        }
+      }
+    },
+    "FileWritten": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "commit_sha"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepoPath"
+        },
+        "commit_sha": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitSha"
+        }
+      }
+    },
+    "FileDeleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "commit_sha"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepoPath"
+        },
+        "commit_sha": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitSha"
+        }
+      }
+    },
+    "PullRequestCreated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "url"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        }
+      }
+    },
+    "ResultBody": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BranchList"
+        },
+        {
+          "$ref": "#/$defs/BranchCreated"
+        },
+        {
+          "$ref": "#/$defs/FileContent"
+        },
+        {
+          "$ref": "#/$defs/FileWritten"
+        },
+        {
+          "$ref": "#/$defs/FileDeleted"
+        },
+        {
+          "$ref": "#/$defs/PullRequestCreated"
+        }
+      ],
+      "description": "FileWritten and FileDeleted share a shape, so a result is matched by the originating request's operation, not by shape alone."
+    },
+    "RequestEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Canonical command envelope (spec 8.2, RTB-42). Authentication material is never part of it. Unknown fields are rejected (RTB-08, RTB-15); a minor-version addition updates this schema.",
+      "required": [
+        "contract_version",
+        "request_id",
+        "issued_at",
+        "expires_at",
+        "principal",
+        "operation",
+        "arguments"
+      ],
+      "properties": {
+        "contract_version": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/ContractVersion"
+        },
+        "request_id": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RequestId"
+        },
+        "issued_at": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
+        },
+        "expires_at": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
+        },
+        "principal": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Principal"
+        },
+        "operation": {
+          "$ref": "#/$defs/Operation"
+        },
+        "arguments": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "list_branches"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "arguments": {
+                "$ref": "#/$defs/ListBranchesArgs"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "create_branch"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "arguments": {
+                "$ref": "#/$defs/CreateBranchArgs"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "read_file"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "arguments": {
+                "$ref": "#/$defs/ReadFileArgs"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "write_file"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "arguments": {
+                "$ref": "#/$defs/WriteFileArgs"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "delete_file"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "arguments": {
+                "$ref": "#/$defs/DeleteFileArgs"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "create_pull_request"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "arguments": {
+                "$ref": "#/$defs/CreatePullRequestArgs"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ResponseEnvelope": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Canonical response. Consumers ignore unknown fields so later minor versions can add them.",
+      "required": [
+        "request_id",
+        "state"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RequestId"
+        },
+        "state": {
+          "$ref": "urn:gitbridge:schema:lifecycle.v1#/$defs/State"
+        },
+        "result": {
+          "$ref": "#/$defs/ResultBody"
+        },
+        "error": {
+          "$ref": "urn:gitbridge:schema:error.v1#/$defs/BridgeError"
+        },
+        "correlation_id": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/CorrelationId"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "SUCCEEDED"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "result"
+            ],
+            "not": {
+              "required": [
+                "error"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "FAILED",
+                  "REJECTED",
+                  "EXPIRED",
+                  "OUTCOME_UNKNOWN"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ],
+            "not": {
+              "required": [
+                "result"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "OUTCOME_UNKNOWN"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "properties": {
+                  "code": {
+                    "const": "OUTCOME_UNKNOWN"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }

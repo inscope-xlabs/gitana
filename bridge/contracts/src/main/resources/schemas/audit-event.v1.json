@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:gitbridge:schema:audit-event.v1",
+  "title": "Audit Event Contract",
+  "description": "Audit record for each accepted operation (spec 11, RTB-09), mirroring AuditEvent.kt. additionalProperties is false so file content, credentials and full request or response bodies cannot be added.",
+  "$defs": {
+    "AuditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp",
+        "request_id",
+        "principal_id",
+        "transport",
+        "decision",
+        "outcome"
+      ],
+      "properties": {
+        "timestamp": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
+        },
+        "request_id": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RequestId"
+        },
+        "principal_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "transport": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/TransportKind"
+        },
+        "repo": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "list_branches",
+            "create_branch",
+            "read_file",
+            "write_file",
+            "delete_file",
+            "create_pull_request"
+          ]
+        },
+        "branch": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+        },
+        "path": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepoPath"
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "outcome": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "upstream_status_category": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "commit_sha": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitSha"
+        },
+        "pull_request_number": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

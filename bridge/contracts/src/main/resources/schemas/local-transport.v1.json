@@ -2,6 +2,161 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:gitbridge:schema:local-transport.v1",
   "title": "Local Transport Contract",
-  "description": "SCAFFOLD: placeholder. Source of truth for this contract; replace with the real schema (see docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md).",
-  "type": "object"
+  "description": "Loopback HTTP listener configuration and headers (spec 5.1, RTB-03, RTB-22). Defaults are the Appendix D values (DV-RTB-*) and remain tunable after device testing. Routes are in openapi/bridge.v1.yaml.",
+  "$defs": {
+    "ListenerConfig": {
+      "type": "object",
+      "required": [
+        "bind",
+        "port",
+        "auth"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "bind": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "127.0.0.1",
+              "::1"
+            ]
+          },
+          "contains": {
+            "const": "127.0.0.1"
+          },
+          "description": "RTB-03: the IPv4 loopback listener is mandatory (failure to establish it prevents startup). '::1' is added where supported and its failure is non-fatal and logged. Wildcard, LAN and other addresses are not representable."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535,
+          "default": 18765,
+          "description": "DV-RTB-PORT. Never below 1024; always shown in the UI."
+        },
+        "auth": {
+          "type": "object",
+          "required": [
+            "required",
+            "scheme"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "const": true,
+              "description": "RTB-22: authentication cannot be disabled on loopback."
+            },
+            "scheme": {
+              "const": "bearer"
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_request_bytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 4194304,
+              "default": 2097152,
+              "description": "DV-RTB-REQUEST-MAX-BYTES. Rejected before parsing."
+            },
+            "max_response_bytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 8388608,
+              "default": 4194304,
+              "description": "DV-RTB-RESPONSE-MAX-BYTES."
+            },
+            "request_timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120,
+              "default": 60,
+              "description": "DV-RTB-TIMEOUT-LOCAL-S."
+            },
+            "rate_limit_per_minute": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 600,
+              "default": 30,
+              "description": "DV-RTB-RATE-LOCAL, per principal."
+            }
+          }
+        }
+      }
+    },
+    "RequestHeaders": {
+      "type": "object",
+      "required": [
+        "authorization",
+        "content-type"
+      ],
+      "additionalProperties": true,
+      "description": "The credential travels only in the Authorization header, never in a URL, query string or argument.",
+      "properties": {
+        "authorization": {
+          "type": "string",
+          "pattern": "^Bearer [A-Za-z0-9_-]{43}$"
+        },
+        "content-type": {
+          "type": "string",
+          "pattern": "^application/json(;\\s*charset=utf-8)?$"
+        }
+      }
+    },
+    "AcceptedResponse": {
+      "type": "object",
+      "required": [
+        "request_id",
+        "state"
+      ],
+      "additionalProperties": true,
+      "description": "Accepted-request semantics for long-running or approval-gated operations (spec Appendix B). Poll GET /api/v1/requests/{request_id}.",
+      "properties": {
+        "request_id": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/RequestId"
+        },
+        "state": {
+          "$ref": "urn:gitbridge:schema:lifecycle.v1#/$defs/State"
+        }
+      }
+    },
+    "Capabilities": {
+      "type": "object",
+      "required": [
+        "contract_version",
+        "operations"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "contract_version": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/ContractVersion"
+        },
+        "operations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:gitbridge:schema:tool-contract.v1#/$defs/Operation"
+          }
+        }
+      }
+    },
+    "Health": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false,
+      "description": "Reveals no credentials, repository contents or sensitive configuration (RTB-18).",
+      "properties": {
+        "status": {
+          "const": "ok"
+        }
+      }
+    }
+  }
 }

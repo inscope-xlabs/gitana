@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:gitbridge:schema:common.v1",
+  "title": "Common Definitions",
+  "description": "Shared primitives for the bridge contracts (spec 4.3, 8.2). Enum values use the Kotlin constant names in bridge/contracts so default serialization round-trips; operation and transport names use the lowercase wire names from spec 7 and Appendix A.",
+  "$defs": {
+    "ContractVersion": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$",
+      "description": "'<major>.<minor>'. This schema set is major version 1; a breaking change requires a new major version and a new schema set (RTB-13)."
+    },
+    "RequestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{8,128}$",
+      "description": "Globally unique per request (RTB-42). Appendix A shows the form 'urn:uuid:<uuid>'. Stable across retries of the same logical request so the phone can deduplicate."
+    },
+    "CorrelationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "description": "Correlation identifier; never a credential."
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+      "description": "RFC 3339 UTC timestamp with a 'Z' suffix. The Kotlin core uses epoch milliseconds internally; adapters convert at the boundary."
+    },
+    "TransportKind": {
+      "type": "string",
+      "enum": [
+        "localhost",
+        "relay"
+      ],
+      "description": "Wire form of TransportKind (LOCALHOST, RELAY)."
+    },
+    "Principal": {
+      "type": "object",
+      "required": [
+        "id",
+        "transport"
+      ],
+      "additionalProperties": false,
+      "description": "Canonical principal produced by a transport adapter after it authenticates its own credential. Never carries credential material.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "transport": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/TransportKind"
+        }
+      }
+    },
+    "GitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full 40-character lowercase hex Git object id."
+    },
+    "RepositoryFullName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,38}/[A-Za-z0-9_.-]{1,100}$",
+      "description": "'owner/name'. Resolved against the approved-repository record; never used as a URL fragment (spec 7)."
+    },
+    "BranchName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^(?!/)(?!.*//)(?!.*\\.\\.)(?!.*@\\{)(?!.*[\\x00-\\x20\\x7f~^:?*\\[\\\\])(?!.*(?:^|/)\\.)(?!.*\\.lock(?:/|$))(?!.*[/.]$)(?!@$).+$",
+      "description": "Branch name following git-check-ref-format, without the 'refs/heads/' prefix."
+    },
+    "GitRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "description": "Branch, tag or commit SHA as supplied by the caller. Resolved by the phone."
+    },
+    "RepoPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "description": "Repository-relative path as received on the wire. This schema only rejects empty, oversized and control-character input. It deliberately does not reject dot segments, '..', percent sequences, backslashes or symlinks: those are decided by the canonical normalizer (RTB-49), which also resolves containment. Passing this schema is necessary, never sufficient."
+    }
+  }
+}
