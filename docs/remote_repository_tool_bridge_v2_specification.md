@@ -86,11 +86,11 @@ Every normative statement in this guide carries an identifier. The tables below 
 |---|---|---|
 | RTB-01 | Every external interface MUST be defined by a versioned, transport-neutral contract. Adapters MUST translate transport messages to internal application commands; core logic MUST NOT import relay or agent SDK types. | §4.2 |
 | RTB-02 | The component owns configuration, credentials, authorization policy, request lifecycle, GitHub client, audit policy, and its published local and remote contract implementations. | §4.1 |
-| RTB-03 | A local HTTP endpoint MUST bind only to `127.0.0.1` and, where supported and needed, `::1`. It MUST NOT bind to `0.0.0.0`, `::`, a LAN interface, or a public interface. | §5.1 |
+| RTB-03 | The local HTTP server MUST bind exclusively to the IPv4 loopback address `127.0.0.1`. It MUST also bind to the IPv6 loopback address `::1` whenever the Android runtime and network stack support IPv6 loopback binding. If IPv6 loopback binding is unavailable or fails, the server MUST continue operating on `127.0.0.1` and MUST record the IPv6 binding failure in its diagnostic log. The server MUST NOT bind to wildcard addresses (`0.0.0.0` or `::`), LAN interfaces, or any other non-loopback address. Failure to establish the IPv4 loopback listener MUST prevent the local HTTP server from starting. | §5.1 |
 | RTB-04 | Local-client credentials, relay-device credentials, remote-agent credentials and GitHub PATs MUST be independent credentials. No credential may be reused across trust domains. | §6.1 |
 | RTB-05 | The phone MUST enforce repository, operation, branch and path policy before contacting GitHub. | §6.2 |
 | RTB-06 | The component MUST use GitHub APIs directly and MUST NOT clone, checkout, or maintain a Git working tree. | §7.1 |
-| RTB-07 | Repository file contents and API response bodies MUST NOT be written to persistent storage, except where the user explicitly enables a separately specified feature. | §10 |
+| RTB-07 | The Android bridge MUST NOT persist bridge request data, tool input, response data, or tool output to durable storage. The sole exception is the explicitly user-activated SAVE-SESSION-CONTENT feature. This feature MUST be implemented exclusively within the Android bridge tool and MUST NOT be available to, implemented by, or independently activated by the relay component. When SAVE-SESSION-CONTENT is disabled, the bridge MUST NOT persist any session content. When enabled, the bridge MAY persist only the session content explicitly covered by that feature's specification and user authorization. The relay MUST NOT persist bridge data or responses under any circumstances. No other feature, configuration, or implicit behavior may override this requirement. | §10 |
 | RTB-08 | Unknown contract versions, unknown operations, missing authentication, invalid authorization, malformed payloads and policy uncertainty MUST fail closed. | §8.3 |
 | RTB-09 | Audit events MUST record action metadata and outcomes without recording credentials, content, or complete request and response bodies. | §11 |
 
@@ -152,7 +152,7 @@ Every normative statement in this guide carries an identifier. The tables below 
 | RTB-46 | Retries MUST be bounded and MUST use exponential backoff with jitter. | §8.4, §9.2 |
 | RTB-47 | Expired requests MUST NOT execute after reconnection. | §8.4 |
 | RTB-48 | The component MUST serialize or otherwise coordinate conflicting writes to the same repository path, and MUST handle GitHub conflict responses. | §7.1 |
-| RTB-49 | Path policy MUST use canonical path normalization and MUST reject traversal, ambiguous encodings, invalid separators and policy bypasses. Prefix-only string checks are insufficient. | §7.2 |
+| RTB-49 | All filesystem paths received, constructed, compared, authorized, or used by the bridge MUST be normalized using the following deterministic algorithm before any filesystem operation or security decision: This algorithm defines the default behavior for all bridge filesystem operations. Any platform-specific implementation MUST preserve these security properties and MUST NOT weaken the normalization or root-containment requirements. | §7.2 |
 | RTB-50 | Policy changes MUST require explicit user action and MUST be auditable. | §7.2 |
 | RTB-51 | The foreground service MUST be started by explicit user action and MUST show a persistent notification with meaningful controls. The component MUST NOT promise automatic restart after force-stop. | §9.1 |
 | RTB-52 | The component MUST NOT declare an unrelated foreground-service type merely to bypass platform restrictions. | §9.1 |
@@ -524,7 +524,7 @@ An unknown major contract version MUST fail closed (RTB-08).
 | RTB-T07 | Local operations continue unchanged when the relay is disabled, unreachable or mid-reconnect (RTB-29). |
 | RTB-T08 | Only the documented routes and methods are served. There is no proxy and no arbitrary path forwarding (RTB-19). |
 | RTB-T09 | An unapproved repository, branch, path or operation is rejected before any GitHub request is issued (RTB-05). |
-| RTB-T10 | A traversal, ambiguous-encoding, invalid-separator or prefix-bypass path is rejected by the canonical normalizer (RTB-49). |
+| RTB-T10 | A traversal, ambiguous-encoding, invalid-separator or prefix-bypass path is rejected by the canonical normalizer (RTB-49). Required cases: `src/./main` normalizes to `src/main`; `src/lib/../main` normalizes to `src/main`; `../../outside` is rejected; NFC and decomposed Unicode equivalents normalize to the same NFC representation; `Readme` and `README` preserve case and are compared using filesystem semantics; `%2e%2e/secret` as a raw filesystem path is not percent-decoded; a symlink pointing outside the repository root is rejected; invalid percent encoding in a URI-derived path is rejected. |
 | RTB-T11 | Writes to a protected branch and to `.github/workflows/**` are denied by default (RTB-36, RTB-37). |
 | RTB-T12 | Malicious README or config content cannot alter policy or bypass approval (RTB-33). |
 | RTB-T13 | Read and write permissions are configurable independently, and a write-only agent cannot read (RTB-34). |
