@@ -603,32 +603,40 @@ The final Local Transport Contract must define whether request submission is syn
 
 ## Appendix D: Defaults
 
-No default value is stated anywhere else in this guide. Each is defined here and referenced by ID.
+No default value is stated anywhere else in this specification. Each default is defined here and referenced by its `DV-RTB-...` ID. Numeric limits are conservative starting points intended to be tuned after device testing on representative hardware and shell runtimes.
 
 | ID | Default | Value |
 |---|---|---|
-| `DV-RTB-PORT` | Local HTTP port policy | Configurable non-privileged port. Never bind below 1024. The bound address and port are always shown in the UI. |
-| `DV-RTB-TOKEN-ENTROPY-BITS` | Local-client credential entropy | At least 256 bits. |
-| `DV-RTB-TOKEN-ENCODING` | Local-client credential format | 32-byte random value, base64url encoded. |
-| `DV-RTB-IPV6` | IPv6 loopback | Support `::1` where the server stack and target shell runtimes can use it. Bind only to loopback addresses, never `::` or any non-loopback interface. |
-| `DV-RTB-RELAY-PROFILE` | Relay security profile | Trusted-relay profile for the initial release. The relay can see and potentially modify the frames it terminates. The end-to-end protected profile is deferred until full design and independent cryptographic review. |
-| `DV-RTB-CONFIRM-DELETE` | Confirmation default for `delete_file` | User confirmation required. |
-| `DV-RTB-CONFIRM-PR` | Confirmation default for `create_pull_request` | User confirmation required; user-configurable later. |
-| `DV-RTB-QUEUE` | Offline queue policy | No write-payload queueing. Retain only bounded lifecycle metadata and reconcile unknown outcomes on reconnect. |
-| `DV-RTB-REQUEST-MAX-BYTES` | Maximum request body and file size | 1–4 MiB. |
-| `DV-RTB-RESPONSE-MAX-BYTES` | Maximum response size | 4–8 MiB. |
-| `DV-RTB-WS-FRAME-MAX-BYTES` | Maximum WebSocket frame size | 1 MiB. |
-| `DV-RTB-MAX-INFLIGHT` | Concurrent in-flight requests | 2–4. |
-| `DV-RTB-TIMEOUT-S` | Read and write timeouts | 30–60 s. |
-| `DV-RTB-RATE-LOCAL` | Local rate limit | Modest per-principal and global; approximately 30 requests per minute for the local path. |
-| `DV-RTB-BACKOFF` | Retry backoff | Exponential with jitter, capped. |
-| `DV-RTB-AUDIT-RETENTION-DAYS` | Audit retention | 7–30 days of metadata only; no content. |
-| `DV-RTB-MIN-SDK` | Minimum Android SDK | 26, or 28 if Keystore or foreground-service features require it. |
-| `DV-RTB-TARGET-SDK` | Target Android SDK | Latest stable (34 or 35). |
-| `DV-RTB-FGS-TYPE` | Foreground-service type | The type that matches a long-running local HTTP service with an optional WebSocket. `specialUse`, or the closest matching type. The exact type chosen is documented at implementation time. |
-| `DV-RTB-GITHUB-API-VERSION` | GitHub REST API version header | A concrete, currently supported date-based version, recorded at implementation time. Never floats on "latest". |
+| `DV-RTB-PORT` | Local HTTP port policy | Configurable non-privileged port (≥ 1024). Recommended starting default: **18765**. The bound address and port MUST always be shown in the UI. Never bind below 1024. |
+| `DV-RTB-TOKEN-ENTROPY-BITS` | Local-client credential entropy | At least **256 bits**. |
+| `DV-RTB-TOKEN-ENCODING` | Local-client credential format | 32-byte cryptographically secure random value, **base64url**-encoded (no padding). |
+| `DV-RTB-IPV6` | IPv6 loopback | Support `::1` where the server stack and target shell runtimes can use it. Bind **only** to loopback addresses (`127.0.0.1` and, if enabled, `::1`). Never bind to `::`, `0.0.0.0`, or any non-loopback interface. |
+| `DV-RTB-RELAY-PROFILE` | Relay security profile | **Trusted-relay** profile for the initial release. The relay can see and potentially modify the frames it terminates. An end-to-end protected profile is deferred until full design and independent cryptographic review. |
+| `DV-RTB-CONFIRM-DELETE` | Confirmation default for `delete_file` | User confirmation **required**. |
+| `DV-RTB-CONFIRM-PR` | Confirmation default for `create_pull_request` | User confirmation **required**; later user-configurable. |
+| `DV-RTB-QUEUE` | Offline queue policy | **No write-payload queueing**. Retain only bounded lifecycle metadata and reconcile unknown outcomes on reconnect. |
+| `DV-RTB-REQUEST-MAX-BYTES` | Maximum request body / file content size | **2 097 152** bytes (2 MiB). Reject before parsing. |
+| `DV-RTB-RESPONSE-MAX-BYTES` | Maximum response body size | **4 194 304** bytes (4 MiB). Do not buffer unbounded GitHub responses. |
+| `DV-RTB-WS-FRAME-MAX-BYTES` | Maximum WebSocket frame size | **1 048 576** bytes (1 MiB). Reject oversized frames. |
+| `DV-RTB-MAX-INFLIGHT` | Concurrent in-flight requests (global) | **2**. Per-repository concurrency also bounded; conflicting path writes MUST be serialized. |
+| `DV-RTB-TIMEOUT-CONNECT-S` | Outbound connect timeout | **15** seconds. |
+| `DV-RTB-TIMEOUT-GITHUB-S` | GitHub request timeout | **45** seconds. |
+| `DV-RTB-TIMEOUT-LOCAL-S` | Local HTTP request timeout | **60** seconds. |
+| `DV-RTB-TIMEOUT-E2E-S` | End-to-end deadline (accepted → terminal) | **120** seconds (or earlier cancellation). |
+| `DV-RTB-RATE-LOCAL` | Local path rate limit | **30** requests per minute per principal (token-bucket or equivalent); modest global ceiling of the same order. |
+| `DV-RTB-BACKOFF` | Retry backoff | Exponential with full jitter. Initial interval **1** s, multiplier **2**, maximum interval **60** s, maximum attempts **5** (or until deadline). |
+| `DV-RTB-AUDIT-RETENTION-DAYS` | Audit retention | **14** days of metadata only; no credentials, content, or full request/response bodies. |
+| `DV-RTB-MIN-SDK` | Minimum Android SDK | **26** (raise to 28 if required by chosen Keystore or foreground-service features). |
+| `DV-RTB-TARGET-SDK` | Target Android SDK | Latest stable at implementation time (**34** or **35**). |
+| `DV-RTB-FGS-TYPE` | Foreground-service type | The type appropriate for a long-running local HTTP service with an optional outbound WebSocket (`specialUse` or the closest matching type). Exact type recorded at implementation time. |
+| `DV-RTB-GITHUB-API-VERSION` | GitHub REST API version header | A concrete, currently supported date-based version (e.g. `2022-11-28` or later supported equivalent). Recorded at implementation time; never floats on “latest”. |
 
-Numeric limits are conservative starting points and are tuned after device testing.
+**Notes**
+
+- All byte limits are hard ceilings. Implementations MUST reject oversized inputs before parsing or buffering.
+- Timeouts are independent; the tightest applicable deadline wins.
+- Rate limits, concurrency, and retention values are starting points. Raise or lower them only after measurement on target devices and after confirming they do not create denial-of-service or resource-exhaustion risks.
+- Port, credential, confirmation, queue, and relay-profile defaults implement the corresponding owner decisions recorded in Appendix E (`RTB-D01` … `RTB-D09`).
 
 ## Appendix E: Decision log
 
