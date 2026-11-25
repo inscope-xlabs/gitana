@@ -90,7 +90,7 @@ Each response contains the next link(s); each link carries a token bound to the 
 
 - Defeats fetch-tool caching: every URL is unique.
 - Prevents replay and duplicate `append` effects.
-- Idempotency: re-sending the same consumed link returns the cached result of the original call for a short window, then `LINK_CONSUMED`.
+- Idempotency: re-sending the same consumed link within a short window returns the original response only if it contains no repository content (status, hashes, sizes). A retried read returns `LINK_CONSUMED` with a fresh link and the agent repeats the read. Any cached response is subject to the relay's short hand-back limit and is never persisted (relay spec §7, D8, D14).
 
 ### 6.3 Theft and replay detection
 
@@ -223,8 +223,8 @@ Acceptance criteria:
 
 - **v2 §5.1/§6.1:** add the `TASK_SESSION` credential class and an explicit exception stating it, and only it, may appear in a URL.
 - **v2 §10/§11:** state that this route's query strings are excluded from logs.
-- **Relay spec §5:** add the navigation route group and the phone-held draft forwarding.
-- **Relay spec §7, §10:** clarify that draft chunks are forwarded, not retained.
+- **Relay spec §5:** add the navigation route group and the phone-held draft forwarding. *(Applied in relay spec 0.2-draft.)*
+- **Relay spec §7, §10:** clarify that draft chunks are forwarded, not retained. *(Applied in relay spec 0.2-draft.)*
 - **v2 §6.3:** note per-task scope as the preferred per-agent scoping mechanism.
 
 ## 15. Open decisions
