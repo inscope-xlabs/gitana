@@ -1,0 +1,146 @@
+openapi: 3.1.0
+info:
+  title: Gitana Remote Repository Tool Bridge - Local Transport
+  version: "1.0"
+  description: |
+    Loopback HTTP surface of the bridge (spec 5.1, Appendix B). The listener binds only to loopback
+    addresses (RTB-03) and requires authentication even there (RTB-22). Bodies are JSON validated
+    against the schemas in ../schemas. Port and limits are the Appendix D defaults and are tunable.
+
+    Open decision (exit tasks section 2): whether submission is synchronous or accepted-then-poll.
+    Both responses are described; approval-gated and long-running operations SHOULD use 202.
+servers:
+  - url: http://127.0.0.1:18765
+    description: Default IPv4 loopback listener (DV-RTB-PORT).
+  - url: http://[::1]:18765
+    description: IPv6 loopback listener, where supported.
+security:
+  - localClientBearer: []
+paths:
+  /api/v1/health:
+    get:
+      operationId: health
+      summary: Non-sensitive liveness
+      security: []
+      responses:
+        "200":
+          description: Alive. Reveals no credentials, contents or configuration (RTB-18).
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/local-transport.v1.json#/$defs/Health
+  /api/v1/capabilities:
+    get:
+      operationId: capabilities
+      summary: Contract version and supported operations
+      responses:
+        "200":
+          description: Capabilities. No secrets.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/local-transport.v1.json#/$defs/Capabilities
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/tools/{operation}:
+    post:
+      operationId: submitToolRequest
+      summary: Submit a canonical tool request
+      description: |
+        The path operation MUST equal the envelope's `operation`. There is no generic proxy and no
+        arbitrary path forwarding (RTB-19); only the six canonical operations are routable.
+      parameters:
+        - name: operation
+          in: path
+          required: true
+          schema:
+            $ref: ../schemas/tool-contract.v1.json#/$defs/Operation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/tool-contract.v1.json#/$defs/RequestEnvelope
+      responses:
+        "200":
+          description: Request reached a terminal or outcome-unknown state.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/tool-contract.v1.json#/$defs/ResponseEnvelope
+        "202":
+          description: Accepted. Poll the request status.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/local-transport.v1.json#/$defs/AcceptedResponse
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "5XX":
+          $ref: "#/components/responses/Error"
+  /api/v1/requests/{request_id}:
+    get:
+      operationId: getRequestStatus
+      summary: Read request lifecycle status
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: Current lifecycle state. Carries no arguments or file content.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/lifecycle.v1.json#/$defs/RequestStatus
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/requests/{request_id}/cancel:
+    post:
+      operationId: cancelRequest
+      summary: Request cancellation, where safe and supported
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: Resulting lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/lifecycle.v1.json#/$defs/RequestStatus
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    localClientBearer:
+      type: http
+      scheme: bearer
+      description: |
+        Local-client credential: 32 random bytes, base64url without padding. Sent only in the
+        Authorization header, never in a URL or query string. Independent of relay and GitHub credentials (RTB-04).
+  parameters:
+    RequestId:
+      name: request_id
+      in: path
+      required: true
+      schema:
+        $ref: ../schemas/common.v1.json#/$defs/RequestId
+  responses:
+    Error:
+      description: Failure. The body carries a sanitized error and the lifecycle state.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/tool-contract.v1.json#/$defs/ResponseEnvelope

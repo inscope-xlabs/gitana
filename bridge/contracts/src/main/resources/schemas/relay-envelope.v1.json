@@ -2,6 +2,143 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:gitbridge:schema:relay-envelope.v1",
   "title": "Relay Transport Contract",
-  "description": "SCAFFOLD: placeholder. Source of truth for this contract; replace with the real schema (see docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md).",
-  "type": "object"
+  "description": "Trusted-relay envelope (relay specification 6.2; DV-RTB-RELAY-PROFILE). The relay can see and modify these frames, so the phone re-validates the payload and enforces its own policy. The end-to-end protected profile is deferred pending design and independent cryptographic review and is deliberately not modelled here. Credentials never appear in an envelope.",
+  "$defs": {
+    "RelayEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relay_version",
+        "type",
+        "device_id",
+        "session_id",
+        "seq",
+        "issued_at",
+        "expires_at"
+      ],
+      "properties": {
+        "relay_version": {
+          "type": "string",
+          "pattern": "^1\\.[0-9]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "request",
+            "response",
+            "ack",
+            "status",
+            "cancel",
+            "ping",
+            "pong",
+            "error",
+            "session_hello"
+          ]
+        },
+        "device_id": {
+          "type": "string",
+          "pattern": "^dev_[A-Za-z0-9_-]{1,128}$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic per device session, assigned by the relay. The phone rejects duplicate or out-of-window values."
+        },
+        "correlation_id": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/CorrelationId"
+        },
+        "issued_at": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
+        },
+        "expires_at": {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
+        },
+        "principal_assertion": {
+          "type": "object",
+          "required": [
+            "agent_id",
+            "asserted_by",
+            "asserted_at"
+          ],
+          "additionalProperties": false,
+          "description": "Built by the relay from the verified agent identity. Scopes are advisory; the phone maps the agent to its own principal and policy.",
+          "properties": {
+            "agent_id": {
+              "type": "string",
+              "pattern": "^agent_[A-Za-z0-9_-]{1,128}$"
+            },
+            "scopes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              }
+            },
+            "asserted_by": {
+              "const": "relay"
+            },
+            "asserted_at": {
+              "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
+            }
+          }
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "request"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "payload",
+              "principal_assertion"
+            ],
+            "properties": {
+              "payload": {
+                "$ref": "urn:gitbridge:schema:tool-contract.v1#/$defs/RequestEnvelope"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "response"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "payload"
+            ],
+            "properties": {
+              "payload": {
+                "$ref": "urn:gitbridge:schema:tool-contract.v1#/$defs/ResponseEnvelope"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }
