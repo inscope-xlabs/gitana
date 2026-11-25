@@ -125,7 +125,7 @@ URLs carry the capability, so intermediaries may log it. Relay and edge configur
 All commands use one fixed path with parameters only in the query string, because some fetch tools only fetch URLs exactly as provided or flag URLs the agent edits:
 
 ```
-GET https://gitana.example/nav/v1/s?t=<step-token>&cmd=<command>&<params>
+GET https://gitana.example/gitana/v1/nav/s?t=<step-token>&cmd=<command>&<params>
 ```
 
 The server returns the next fully formed link(s). Agents that cannot compose a query string can use only links issued verbatim (Tier A/B below). Each target agent's fetch tool MUST be tested for composing URLs with extra `&` parameters before Tier C is enabled for it (§12).
