@@ -25,3 +25,13 @@ dependencyResolutionManagement {
 rootProject.name = "RepoClone"
 
 include(":app")
+include(
+  ":bridge:contracts",
+  ":bridge:core",
+  ":bridge:github",
+  ":bridge:vault",
+  ":bridge:storage",
+  ":bridge:local",
+  ":bridge:relay",
+  ":bridge:app",
+)
