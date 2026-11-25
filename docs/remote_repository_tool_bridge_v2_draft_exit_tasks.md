@@ -4,7 +4,7 @@ Companion to [remote_repository_tool_bridge_v2_specification.md](remote_reposito
 The specification is currently **Review draft (2.0-draft)**. It may move to an approved baseline only when every
 task below is complete. Source references point to sections of the specification.
 
-## 1. Owner decisions (spec §14, §15)
+## 1. Owner decisions (spec §14, Appendix E)
 
 - [x] Choose the local HTTP port policy (configurable, non-privileged) and document the default.
 - [x] Choose the local authentication scheme and pairing/bootstrap flow (token format, entropy, lifetime, storage).
