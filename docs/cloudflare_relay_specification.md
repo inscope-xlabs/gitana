@@ -56,17 +56,17 @@ Requirements:
 
 ## 5. Endpoints
 
-All routes are versioned under `/relay/v1/`. Only the routes below are allowed; there is no generic proxying.
+All routes are versioned under `/gitana/v1/`. Only the routes below are allowed; there is no generic proxying.
 
 | Method | Route | Caller | Purpose |
 | --- | --- | --- | --- |
-| GET (Upgrade) | `/relay/v1/device/connect` | Phone | Establish the device WebSocket. Auth: relay-device credential. |
-| POST | `/relay/v1/agent/devices/{device_id}/requests` | Agent | Submit a canonical tool request envelope. Returns `202` with a relay correlation ID, or a synchronous result if the contract selects sync mode (D4). |
-| GET | `/relay/v1/agent/devices/{device_id}/requests/{request_id}` | Agent | Poll status/result of a request. |
-| POST | `/relay/v1/agent/devices/{device_id}/requests/{request_id}/cancel` | Agent | Request cancellation where supported. |
-| GET | `/relay/v1/agent/devices/{device_id}/status` | Agent | Device presence (`online`/`offline`) and contract version. No secrets. |
-| GET | `/relay/v1/health` | Anyone | Non-sensitive liveness. |
-| Admin | `/relay/v1/admin/...` | Operator | Register/revoke devices and agents, set per-agent device scopes. Separate auth. |
+| GET (Upgrade) | `/gitana/v1/device/connect` | Phone | Establish the device WebSocket. Auth: relay-device credential. |
+| POST | `/gitana/v1/agent/devices/{device_id}/requests` | Agent | Submit a canonical tool request envelope. Returns `202` with a relay correlation ID, or a synchronous result if the contract selects sync mode (D4). |
+| GET | `/gitana/v1/agent/devices/{device_id}/requests/{request_id}` | Agent | Poll status/result of a request. |
+| POST | `/gitana/v1/agent/devices/{device_id}/requests/{request_id}/cancel` | Agent | Request cancellation where supported. |
+| GET | `/gitana/v1/agent/devices/{device_id}/status` | Agent | Device presence (`online`/`offline`) and contract version. No secrets. |
+| GET | `/gitana/v1/health` | Anyone | Non-sensitive liveness. |
+| Admin | `/gitana/v1/admin/...` | Operator | Register/revoke devices and agents, set per-agent device scopes. Separate auth. |
 
 An agent MUST only reach devices it has been explicitly granted. Device IDs MUST be unguessable identifiers and MUST NOT be treated as authorization.
 
