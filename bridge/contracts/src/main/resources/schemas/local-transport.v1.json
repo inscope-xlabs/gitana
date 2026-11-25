@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:gitbridge:schema:local-transport.v1",
+  "title": "Local Transport Contract",
+  "description": "SCAFFOLD: placeholder. Source of truth for this contract; replace with the real schema (see docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md).",
+  "type": "object"
+}
