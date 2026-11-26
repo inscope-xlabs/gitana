@@ -4,7 +4,7 @@ android {
   namespace = "com.inscopexlabs.gitana.gitbridge.relay"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
-  defaultConfig { minSdk = 24 }
+  defaultConfig { minSdk = 26 }
 
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11

@@ -621,6 +621,7 @@ An unknown major contract version MUST fail closed (RTB-08).
 |---|---|---|
 | 2.0-draft | 25 November 2026 | Restructured to the house format: metadata header, terms glossary, identifier-bearing architecture rules, conformance tests, and named defaults. No technical decision changed. Owner decisions are recorded in Appendix E. |
 | 2.0-draft | 26 November 2026 | Closed Phase A contract decisions (`RTB-D10`–`RTB-D17`): RTB-49 canonical path algorithm and test vectors, Local Transport response model and `::1` alignment, lifecycle edges and delivery table, full 18-code error catalog, `create_pull_request` head/idempotency rules, allow-list lowercase canonicalization and default protected lists, relay window/expiry defaults, and §4.3/§15 consistency cleanup. |
+| 2.0-draft | 26 November 2026 | Reconciled Android SDK & C1 Base64 codec decisions (`RTB-D08`, `RTB-D18`): aligned Gradle `minSdk` to `26`, updated `DV-RTB-TARGET-SDK` / `RTB-D08` `targetSdk` to `36`, and selected native `java.util.Base64` for `Base64Content`. |
 
 ## Appendix A: Canonical request envelope
 
@@ -693,8 +694,8 @@ No default value is stated anywhere else in this specification. Each default is 
 | `DV-RTB-RATE-LOCAL` | Local path rate limit | **30** requests per minute per principal (token-bucket or equivalent); modest global ceiling of the same order. |
 | `DV-RTB-BACKOFF` | Retry backoff | Exponential with full jitter. Initial interval **1** s, multiplier **2**, maximum interval **60** s, maximum attempts **5** (or until deadline). |
 | `DV-RTB-AUDIT-RETENTION-DAYS` | Audit retention | **14** days of metadata only; no credentials, content, or full request/response bodies. |
-| `DV-RTB-MIN-SDK` | Minimum Android SDK | **26** (raise to 28 if required by chosen Keystore or foreground-service features). |
-| `DV-RTB-TARGET-SDK` | Target Android SDK | Latest stable at implementation time (**34** or **35**). |
+| `DV-RTB-MIN-SDK` | Minimum Android SDK | **26** (aligned across `:app` and Android bridge modules; raise to 28 if required by chosen Keystore or foreground-service features). |
+| `DV-RTB-TARGET-SDK` | Target Android SDK | **36** (aligned with `app/build.gradle.kts`). |
 | `DV-RTB-FGS-TYPE` | Foreground-service type | The type appropriate for a long-running local HTTP service with an optional outbound WebSocket (`specialUse` or the closest matching type). Exact type recorded at implementation time. |
 | `DV-RTB-GITHUB-API-VERSION` | GitHub REST API version header | A concrete, currently supported date-based version (e.g. `2022-11-28` or later supported equivalent). Recorded at implementation time; never floats on “latest”. |
 | `DV-RTB-RELAY-SEQ-WINDOW` | Relay monotonic `seq` window | **64** sequence numbers per device session (`RTB-D17`). |
@@ -711,7 +712,7 @@ No default value is stated anywhere else in this specification. Each default is 
 
 ## Appendix E: Decision log
 
-Owner decisions recorded on 25 November 2026 (`RTB-D01`–`RTB-D09`) and 26 November 2026 (`RTB-D10`–`RTB-D17`). Each decision has an identifier so that companion specifications can cite it without restating it.
+Owner decisions recorded on 25 November 2026 (`RTB-D01`–`RTB-D09`) and 26 November 2026 (`RTB-D10`–`RTB-D18`). Each decision has an identifier so that companion specifications can cite it without restating it.
 
 | ID | Decision | Chosen value / policy |
 |---|---|---|
@@ -722,7 +723,7 @@ Owner decisions recorded on 25 November 2026 (`RTB-D01`–`RTB-D09`) and 26 Nove
 | `RTB-D05` | Confirmation defaults | `delete_file` requires user confirmation by default. `create_pull_request` requires user confirmation by default, user-configurable later. See `DV-RTB-CONFIRM-DELETE`, `DV-RTB-CONFIRM-PR`. |
 | `RTB-D06` | Offline queue policy | No write-payload queueing. Retain only bounded lifecycle metadata and reconcile unknown outcomes on reconnect. See `DV-RTB-QUEUE`. |
 | `RTB-D07` | Numeric limits | Conservative starting defaults, tuned after device testing. Request body and file size 1–4 MiB. Response size 4–8 MiB. WebSocket frame 1 MiB. Concurrent in-flight requests 2–4. Read and write timeouts 30–60 s. Rate limits modest per-principal and global, approximately 30 requests per minute for the local path. Backoff exponential with jitter, capped. Audit retention 7–30 days of metadata only, no content. See Appendix D. |
-| `RTB-D08` | Android SDK and foreground-service type | `minSdk` 26, or 28 if Keystore or foreground-service features require it. `targetSdk` the latest stable (34 or 35). Use the foreground-service type that matches a long-running local HTTP service with an optional WebSocket; the exact type chosen is documented. See `DV-RTB-MIN-SDK`, `DV-RTB-TARGET-SDK`, `DV-RTB-FGS-TYPE`. |
+| `RTB-D08` | Android SDK and foreground-service type | `minSdk` **26** (reconciled in Gradle across `:app` and Android bridge modules; raise to 28 if Keystore or foreground-service features require it). `targetSdk` **36** (aligned with `app/build.gradle.kts`). Use the foreground-service type that matches a long-running local HTTP service with an optional WebSocket; the exact type chosen is documented. See `DV-RTB-MIN-SDK`, `DV-RTB-TARGET-SDK`, `DV-RTB-FGS-TYPE`. |
 | `RTB-D09` | GitHub REST API version header | Pin to a concrete, currently supported date-based version and record the exact value at implementation time. Do not float on "latest". See `DV-RTB-GITHUB-API-VERSION`. |
 | `RTB-D10` | Local transport response model | `list_branches` and `read_file` return synchronous `200` (`ResponseEnvelope`); `create_branch`, `write_file`, `delete_file`, and `create_pull_request` return `202` + poll (`AcceptedResponse`). Transport-level failures without a `request_id` return `TransportError`. |
 | `RTB-D11` | Lifecycle states & cancel route | `MANUAL_REVIEW` and `CANCELLED` are first-class states; `POST /api/v1/requests/{request_id}/cancel` is supported and idempotent for pre-dispatch states (`RECEIVED`, `AUTHORIZED`, `AWAITING_APPROVAL`) and `MANUAL_REVIEW`. `OUTCOME_UNKNOWN` transitions to `RECONCILING` or `MANUAL_REVIEW`. |
@@ -732,3 +733,4 @@ Owner decisions recorded on 25 November 2026 (`RTB-D01`–`RTB-D09`) and 26 Nove
 | `RTB-D15` | Default protected branches & paths | Protected branches: `main`, `master`. Protected paths: `.github/workflows/**`, `.git/**`, `.gitana/**`, and policy/config files unless explicitly enabled. |
 | `RTB-D16` | Error catalog & retry bounds | Full 18-code catalog in `schemas/error.v1.json` and `ErrorCode.kt`; backoff `1 s` initial, `60 s` max, exponential with full jitter (`DV-RTB-BACKOFF`); `OUTCOME_UNKNOWN` stays `retryable: false`. |
 | `RTB-D17` | Relay transport parameters | Trusted-relay profile only (E2E deferred); `seq` window `64` (`DV-RTB-RELAY-SEQ-WINDOW`); max request expiry `5 minutes` / `300 s` (`DV-RTB-RELAY-EXPIRY-S`); replay detection mandatory; expired requests never execute after reconnect. |
+| `RTB-D18` | Base64 codec selection (`C1`) | Reconciled with `minSdk = 26` (`RTB-D08`): `Base64Content` uses standard `java.util.Base64` (`getDecoder()` after stripping ASCII whitespace for strict RFC 4648 decode; `getEncoder()` for single-line outgoing payloads per §7.1), without core library desugaring or a custom codec. |

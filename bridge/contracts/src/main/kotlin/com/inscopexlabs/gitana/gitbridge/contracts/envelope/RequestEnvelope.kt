@@ -7,7 +7,7 @@ import com.inscopexlabs.gitana.gitbridge.contracts.version.ContractVersion
 
 /**
  * Canonical command envelope (spec 8.2). Authentication material is deliberately not part of it.
- * Times are epoch milliseconds to stay usable on API 24 without desugaring.
+ * Times are epoch milliseconds across transports without requiring desugaring.
  */
 data class RequestEnvelope(
     val contractVersion: ContractVersion,

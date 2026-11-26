@@ -154,7 +154,7 @@ reconciliation (B9) depend on it. Nothing may persist request bodies or file con
 **C1. Six operations** (6a#6, 6b#16). `ops/ReadFile.kt`, `WriteFile.kt`, `CreateBranch.kt`, `DeleteFile.kt`,
 `ListBranches.kt`, `CreatePullRequest.kt`, plus `GitHubAdapter.kt`, `client/GitHubHttpClient.kt`,
 `codec/Base64Content.kt`. The phone resolves file SHA and base commit SHA itself (RTB-15). Handle empty repos,
-non-text and oversized files, Base64 edge cases. Pin the API version in `GitHubApiVersion.kt` (RTB-58). Never log
+non-text and oversized files, Base64 edge cases (using native `java.util.Base64` per `RTB-D08`/`RTB-D18`, with `minSdk = 26` and `targetSdk = 36` reconciled across Gradle and spec). Pin the API version in `GitHubApiVersion.kt` (RTB-58). Never log
 bodies or the PAT. Depends on A5.
 Acceptance: mocked-REST contract tests for success, 409 conflict and 429 for each operation.
 
