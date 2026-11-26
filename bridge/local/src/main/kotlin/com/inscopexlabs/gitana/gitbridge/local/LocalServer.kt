@@ -29,6 +29,7 @@ import io.ktor.server.plugins.bodylimit.RequestBodyLimit
 import io.ktor.server.response.ApplicationSendPipeline
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
+import io.ktor.util.pipeline.PipelinePhase
 import java.net.BindException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -346,8 +347,14 @@ class KtorListenerFactory(
             }
         }
 
-        intercept(ApplicationCallPipeline.Fallback) {
-            if (!call.response.isCommitted && !call.response.isSent) call.reject(TransportErrors.notFound)
+        // Ktor's own fallback answers 404 with an empty body and is registered ahead of module
+        // interceptors, so unknown routes are answered in a phase before it.
+        val unknownRoute = PipelinePhase("UnknownRoute")
+        insertPhaseBefore(ApplicationCallPipeline.Fallback, unknownRoute)
+        intercept(unknownRoute) {
+            if (!call.response.isCommitted && call.response.status() == null) {
+                call.reject(TransportErrors.notFound)
+            }
         }
 
         // Covers responses of known length; D3 responses are sized text.
