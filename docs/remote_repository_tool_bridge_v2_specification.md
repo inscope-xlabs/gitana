@@ -152,7 +152,7 @@ Every normative statement in this guide carries an identifier. The tables below 
 | RTB-46 | Retries MUST be bounded and MUST use exponential backoff with jitter. | §8.4, §9.2 |
 | RTB-47 | Expired requests MUST NOT execute after reconnection. | §8.4 |
 | RTB-48 | The component MUST serialize or otherwise coordinate conflicting writes to the same repository path, and MUST handle GitHub conflict responses. | §7.1 |
-| RTB-49 | All filesystem paths received, constructed, compared, authorized, or used by the bridge MUST be normalized using the following deterministic algorithm before any filesystem operation or security decision: This algorithm defines the default behavior for all bridge filesystem operations. Any platform-specific implementation MUST preserve these security properties and MUST NOT weaken the normalization or root-containment requirements. | §7.2 |
+| RTB-49 | All filesystem paths received, constructed, compared, authorized, or used by the bridge MUST be normalized using the following deterministic algorithm before any filesystem operation or policy decision: (1) reject empty input, NUL, and C0/DEL control characters; (2) reject any backslash `\`; (3) do NOT percent-decode raw repository-relative paths, while URI-derived paths MUST reject invalid percent-encodings and percent-decode at most once; (4) normalize to Unicode NFC; (5) preserve case and treat containment checks as case-sensitive even on case-insensitive host filesystems; (6) reject leading `/`, collapse empty segments (`//`) and `.`, resolve in-bounds `..` segments, strip trailing `/`, and reject immediately on root escape or empty result; (7) for real-filesystem targets, canonicalize root and target, verify strict case-sensitive containment inside the canonical repository root (rejecting symlink escapes), and operate only on that verified target; (8) join canonical segments with `/`. See §7.2 and `schemas/path-normalization-test-vectors.v1.json`. Any platform-specific implementation MUST preserve these security properties and MUST NOT weaken the normalization or root-containment requirements. | §7.2 |
 | RTB-50 | Policy changes MUST require explicit user action and MUST be auditable. | §7.2 |
 | RTB-51 | The foreground service MUST be started by explicit user action and MUST show a persistent notification with meaningful controls. The component MUST NOT promise automatic restart after force-stop. | §9.1 |
 | RTB-52 | The component MUST NOT declare an unrelated foreground-service type merely to bypass platform restrictions. | §9.1 |
@@ -199,13 +199,28 @@ The contract repository and this specification are the source of truth; generate
 
 | Contract | Purpose | Required fields / topics |
 |---|---|---|
-| Tool Contract | Canonical operation definitions. | Operation names, inputs, output schemas, constraints, side effects. |
-| Local Transport Contract | Loopback HTTP request and response behavior. | Base path, version, auth, envelope, limits, errors, timeout. |
-| Relay Transport Contract | Phone-to-relay and agent-to-relay message envelope. | Device identity, session binding, request ID, correlation, expiry, integrity, acknowledgements. |
+| Tool Contract | Canonical operation definitions. | Operation names, inputs, output schemas, constraints, side effects, delivery guarantees. |
+| Local Transport Contract | Loopback HTTP request and response behavior. | Base path, version, auth, host/origin guards, envelope, sync-200 vs 202-poll model, limits, errors, timeout. |
+| Relay Transport Contract | Phone-to-relay and agent-to-relay message envelope. | Device identity (`dev_<opaque>`), session binding, monotonic `seq` (window `DV-RTB-RELAY-SEQ-WINDOW`), request ID, correlation, expiry (`DV-RTB-RELAY-EXPIRY-S`), replay defense, acknowledgements, advisory `principal_assertion`. |
 | Authorization Contract | Policy decisions for every operation. | Principal, repo, operation, branch, path, decision, reason, confirmation requirement. |
 | Credential Contract | Credential types and lifecycle. | Issuer, subject, scope, expiry, rotation, revocation, storage class. |
-| Execution Lifecycle Contract | Request states and delivery guarantees. | Accepted, executing, succeeded, failed, outcome-unknown, cancelled, expired. |
+| Execution Lifecycle Contract | Request states and delivery guarantees. | Canonical `RequestState` values (`RECEIVED` through terminal `SUCCEEDED`/`FAILED`/`EXPIRED`/`REJECTED`/`CANCELLED`). |
 | Audit Event Contract | Local audit and optional sanitized telemetry. | Timestamp, principal, request ID, operation, target, outcome, commit and pull-request identifiers. |
+
+**Lifecycle naming reconciliation (§4.3 prose to `RequestState`):**
+
+| §4.3 prose term | Canonical `RequestState` enum value(s) |
+|---|---|
+| Accepted | `RECEIVED`, `AUTHORIZED`, `AWAITING_APPROVAL` |
+| Executing | `EXECUTING` |
+| Succeeded | `SUCCEEDED` |
+| Failed | `FAILED` |
+| Outcome-unknown | `OUTCOME_UNKNOWN`, `RECONCILING`, `MANUAL_REVIEW` |
+| Cancelled | `CANCELLED` |
+| Expired | `EXPIRED` |
+| Rejected (policy / approval) | `REJECTED` |
+
+> **Navigation Transport boundary:** The [Navigation Transport](navigation_transport_specification.md) is a separate adapter plane; the sample task (`example-org/sandbox`) does **not** inherit Navigation Transport session rules.
 
 Contract versions MUST be explicit, as a path segment such as `/v1` or a schema version field. A breaking change requires a new major contract version (RTB-13). Minor additions MUST be backward compatible, and unknown fields MUST be handled according to the schema's compatibility rules (RTB-14).
 
@@ -216,11 +231,13 @@ Contract versions MUST be explicit, as a path segment such as `/v1` or a schema 
 The component MUST expose a local HTTP interface for same-device agents that communicate through shell or local tool adapters (RTB-16). The server MUST bind to loopback only (RTB-17).
 
 - The default listener is `http://127.0.0.1:<configured-port>/api/v1/`, where the port follows `DV-RTB-PORT`.
-- IPv6 loopback (`::1`) MAY also be supported under `DV-RTB-IPV6`, but the server MUST NOT bind to wildcard addresses (RTB-03).
+- IPv6 loopback (`::1`) MUST also be bound whenever the Android runtime and network stack support it under `DV-RTB-IPV6`; if IPv6 loopback binding fails, the server MUST continue on `127.0.0.1` and log the failure. The server MUST NOT bind to wildcard addresses (`0.0.0.0` or `::`) or non-loopback interfaces (RTB-03).
+- Response model: `list_branches` and `read_file` return synchronous `200 OK` with `ResponseEnvelope`; mutating operations (`create_branch`, `write_file`, `delete_file`, `create_pull_request`) return `202 Accepted` with `AcceptedResponse` and are polled via `GET /api/v1/requests/{request_id}`. `POST /api/v1/requests/{request_id}/cancel` is supported and idempotent for cancellable or already-cancelled requests.
+- Error envelopes: errors occurring after a request is identified return `ResponseEnvelope` with `error`; pre-request transport/authentication/guard failures (e.g., `401`, `403` Host/Origin, `413` before parsing, `404` unknown route) return `TransportError` (`{"error": BridgeError}`).
 - Health and readiness endpoints MUST reveal no credentials, repository contents or sensitive configuration (RTB-18).
 - Only explicitly documented routes and methods are allowed. There MUST be no generic proxy and no arbitrary path forwarding (RTB-19, App. B).
 - The listener MUST enforce strict request-size limits, read and write timeouts, connection limits and rate limits (RTB-20).
-- `Host` headers and origin patterns not permitted by the Local Transport Contract MUST be rejected. Permissive CORS MUST NOT be enabled (RTB-21). Shell clients do not require browser CORS; browser access, if ever supported, requires a separate threat review.
+- Required headers (`RequestHeaders`): `Authorization: Bearer <token>`, `Content-Type: application/json`, and loopback `Host` (`127.0.0.1`, `[::1]`, or `localhost` with optional port). `Host` headers and `Origin` patterns not permitted by the Local Transport Contract MUST be rejected. Permissive CORS MUST NOT be enabled (RTB-21). Shell clients do not require browser CORS; browser access, if ever supported, requires a separate threat review.
 - Authentication MUST be required even on loopback (RTB-22). Loopback is a network boundary, not proof of user identity.
 - The local-client credential MUST be distinct from all relay and GitHub credentials, independently provisioned and independently revocable (RTB-23).
 - Credentials MUST NOT be placed in URLs, query strings, command-line arguments, shell history or logs. Prefer an OS-protected local credential file or secret channel, or a short-lived token provisioned through an explicit pairing flow (RTB-23).
@@ -234,10 +251,10 @@ The relay is an optional transport adapter. Its absence MUST NOT prevent the loc
 
 - The Android device initiates the outbound TLS WebSocket connection; the phone does not open an inbound public port (RTB-24).
 - The relay adapter uses a device-specific relay credential, not the local-client credential and not the GitHub PAT (RTB-25).
-- Remote-agent authentication is owned by the relay and agent boundary and MUST NOT be passed into the core as a raw bearer secret (RTB-26). The relay adapter receives a verified principal assertion under the relay contract.
-- Device and session routing, remote-principal authorization, message expiry, replay detection and request correlation MUST be explicit in the relay contract (RTB-27).
+- Remote-agent authentication is owned by the relay and agent boundary and MUST NOT be passed into the core as a raw bearer secret (RTB-26). The relay adapter receives a verified `principal_assertion` (`agent_id`, advisory `scopes`, `asserted_by: "relay"`, `asserted_at`) under the Relay Transport Contract (`schemas/relay-envelope.v1.json`).
+- Device identity (`dev_<opaque>`), per-connection `session_id` binding, monotonic `seq` within window `DV-RTB-RELAY-SEQ-WINDOW` (`64`), `correlation_id`, maximum request expiry `DV-RTB-RELAY-EXPIRY-S` (`300` seconds / 5 minutes), mandatory replay detection, and `ack`/`response` acknowledgements are defined in `schemas/relay-envelope.v1.json` and the [Cloudflare Relay specification](cloudflare_relay_specification.md) (RTB-27). Expired requests MUST NOT execute after reconnection (RTB-47).
 - The relay may maintain transient connection and session state. It MUST NOT persist repository content, GitHub credentials, or full request and response bodies (RTB-28).
-- Unless end-to-end message integrity and confidentiality are implemented and independently reviewed, the relay MUST be treated as trusted to see and potentially alter the frames it terminates (RTB-39).
+- The initial release uses the trusted-relay profile (`DV-RTB-RELAY-PROFILE`); the relay is trusted to see and potentially alter frames it terminates (RTB-39). The end-to-end protected profile remains deferred pending design and independent cryptographic review.
 - Relay transport failure MUST NOT disable or alter localhost operation (RTB-29).
 
 ### 5.3 Local and remote separation
@@ -315,7 +332,7 @@ The initial public tool surface remains intentionally small. All tool definition
 | `read_file` | `repo`, `path`, `ref` | `GET /repos/{owner}/{repo}/contents/{path}`; decode supported text content; enforce file and response limits. |
 | `write_file` | `repo`, `path`, `content`, `branch`, `message` | Resolve the existing file SHA when updating; omit the SHA only for creation; encode content as required by the API; handle conflicts and stale branch heads. |
 | `delete_file` | `repo`, `path`, `branch`, `message` | Resolve the current file SHA, then call the contents delete endpoint; handle conflict and unknown completion. |
-| `create_pull_request` | `repo`, `head`, `base`, `title`; optional `body` | `POST /repos/{owner}/{repo}/pulls`; define head owner and branch syntax, detect existing equivalent PRs, and handle permission errors. |
+| `create_pull_request` | `repo`, `head`, `base`, `title`; optional `body` | `POST /repos/{owner}/{repo}/pulls`; `head` accepts `branch` (resolved to the approved repo owner) or `owner:branch`; if an equivalent open PR exists for `(head, base)`, return `SUCCEEDED` idempotently with `already_existed: true` and a `note`. |
 
 The phone MUST resolve repository owner and name from a canonical approved-repository record, rather than accepting arbitrary URL fragments. No operation may accept an arbitrary endpoint, host, HTTP method or raw GitHub API path (RTB-15).
 
@@ -324,11 +341,13 @@ The phone MUST resolve repository owner and name from a canonical approved-repos
 - File updates require the current blob or file SHA; file creation does not. Resolve internally, unless the public contract explicitly exposes a conditional-update token.
 - File deletion requires the current file SHA.
 - Branch creation requires a commit SHA. Resolve the selected base branch to its current commit SHA before creating `refs/heads/<new_branch>`.
-- Handle empty repositories, missing branches, missing files, non-text or binary files, and oversized content explicitly.
-- Contents API requests and responses require correct Base64 handling where applicable.
+- Pull-request `head` accepts bare `branch` (interpreted as `{approved_owner}:{branch}`) or qualified `owner:branch`. Before or on `POST /pulls`, check for an equivalent open PR matching `(head, base)`; if found, return `SUCCEEDED` with the existing PR `number`, `url`, `already_existed: true`, and an explanatory `note`.
+- Empty repositories return `NOT_FOUND` on `read_file` and an empty `BranchList` on `list_branches`; writes/branch creation against a missing base branch return `NOT_FOUND` or `CONFLICT`.
+- Binary or non-UTF-8 files on `read_file` fail with `UNSUPPORTED_CONTENT`; content exceeding `DV-RTB-REQUEST-MAX-BYTES` or `DV-RTB-RESPONSE-MAX-BYTES` fails with `PAYLOAD_TOO_LARGE` before buffering.
+- Contents API Base64 handling MUST strip ASCII whitespace/newlines when decoding GitHub responses using strict RFC 4648 decoding, and MUST encode outgoing `write_file` payloads as single-line Base64 without embedded newlines.
 - Paginate list operations and enforce bounded page sizes.
-- Handle rate limits and secondary rate limits with bounded backoff, and honour `Retry-After` where supplied.
-- Normalize upstream errors. Do not return raw upstream messages without review for sensitive details.
+- Handle rate limits and secondary rate limits (`403`/`429` with rate-limit headers) with bounded backoff (`DV-RTB-BACKOFF`), honouring `Retry-After` capped at the maximum backoff/deadline. `409`/`422` conflicts return `CONFLICT` with no auto-retry.
+- Normalize upstream errors per §11.1 and `schemas/error.v1.json`. Never return raw upstream bodies or credentials in sanitized error messages.
 - The GitHub REST API version header MUST be pinned and documented, and MUST be reviewed during upgrades (RTB-58).
 - Serialize or otherwise coordinate conflicting writes to the same repository path, and handle GitHub conflict responses (RTB-48).
 
@@ -336,15 +355,36 @@ The phone MUST resolve repository owner and name from a canonical approved-repos
 
 At provisioning time, the user selects approved repositories and configures operation permissions. Each request MUST be checked against that allow-list before GitHub is contacted.
 
-Path policy MUST use canonical path normalization and MUST reject traversal, ambiguous encodings, invalid separators and policy bypasses. Prefix-only string checks are insufficient (RTB-49).
+- **Repository allow-list canonicalization:** `owner/repository` names are normalized to lowercase before comparison against the allow-list (e.g., `Example-Org/Sandbox` and `example-org/sandbox` resolve to the same canonical record). Only the current canonical name is accepted; the component MUST NOT automatically follow repository renames or GitHub redirects. Any non-canonical or unapproved repository identifier MUST fail closed with a typed error (`VALIDATION_FAILED` or `POLICY_DENIED`).
+- **Default protected branches and paths:** Protected branches default to `main` and `master` (`DV-RTB-PROTECTED-BRANCHES`). Protected paths default to `.github/workflows/**`, `.git/**`, `.gitana/**`, and policy/configuration files unless explicitly enabled (`DV-RTB-PROTECTED-PATHS`). All other branches and paths are writable subject to allow-list and confirmation rules. Policy changes require explicit user action and are auditable (RTB-50).
 
-Default policy: deny writes to protected branches; deny `.github/workflows/**`; deny policy and configuration paths unless explicitly enabled; allow only configured branches and operations. Policy changes require explicit user action and are auditable (RTB-50).
+**RTB-49 canonical path normalization algorithm:**
+
+All path comparisons and filesystem operations MUST run this deterministic pipeline before any policy decision or execution; prefix-only string checks are insufficient:
+
+1. **Reject empty and control characters:** Reject empty/blank strings, NUL (`\u0000`), and C0/DEL control characters (`\u0000`–`\u001f`, `\u007f`).
+2. **Reject backslashes:** Reject any path containing `\` (do not translate `\` to `/`).
+3. **Percent-encoding boundary:** Raw repository-relative paths (`RepoPath` tool arguments) MUST NOT be percent-decoded (e.g. `%2e%2e/secret` stays literal `%2e%2e/secret`). URI-derived paths MUST reject invalid or truncated percent-encoding, percent-decode at most once, and then undergo steps 1–2 and 4–8.
+4. **Unicode normalization:** Normalize the string to Unicode **NFC**.
+5. **Case preservation and containment semantics:** Preserve exact character case (`Readme` ≠ `README`). All containment checks MUST treat paths as case-sensitive even if the underlying host filesystem is case-insensitive.
+6. **Separator and dot-segment normalization:** Reject leading `/` (absolute paths are invalid). Split on `/`, discard empty segments (`//`) and `.` segments, and resolve `..` against a segment stack; if `..` encounters an empty stack, **reject immediately** as root escape (`../../outside`). Strip any trailing `/`. If the resulting canonical segment list is empty, **reject**.
+7. **Symlink containment and TOCTOU safety:** Where filesystem symlinks exist, canonicalize both the repository root and the target real path, verify using case-sensitive prefix containment that the resolved target resides strictly inside the canonical repository root (rejecting any symlink escape), and execute the operation against that same verified target.
+8. **Canonical join:** Join remaining segments with `/` and evaluate protected-path rules against the resulting canonical string. Conformance test vectors are published in `schemas/path-normalization-test-vectors.v1.json`.
 
 ## 8. Request lifecycle, delivery, and idempotency
 
 ### 8.1 Delivery model
 
-The system MUST NOT claim exactly-once delivery across a network connection. The achievable design is at-least-once transport with deduplication and explicit outcome tracking, or at-most-once dispatch with possible unknown outcomes. The contract MUST state which behavior applies to each operation (RTB-41).
+The system MUST NOT claim exactly-once delivery across a network connection. The achievable design is at-least-once transport with deduplication and explicit outcome tracking, or at-most-once dispatch with possible unknown outcomes. The contract defines the model for each operation (RTB-41):
+
+| Operation | Delivery guarantee | Local HTTP model | Reconciliation entry point on `OUTCOME_UNKNOWN` |
+|---|---|---|---|
+| `list_branches` | At-least-once (idempotent read) | Synchronous `200` | Safe re-read `GET /repos/{owner}/{repo}/branches` |
+| `read_file` | At-least-once (idempotent read) | Synchronous `200` | Safe re-read `GET /repos/{owner}/{repo}/contents/{path}` |
+| `create_branch` | Reconcilable (at-most-once dispatch) | `202 Accepted` + poll | Read `GET /repos/{owner}/{repo}/git/ref/heads/{new_branch}` and verify SHA matches resolved `base` commit SHA |
+| `write_file` | Reconcilable (at-most-once dispatch) | `202 Accepted` + poll | Read `GET /repos/{owner}/{repo}/contents/{path}?ref={branch}` and verify blob/commit hash without persisting content |
+| `delete_file` | Reconcilable (at-most-once dispatch) | `202 Accepted` + poll | Read `GET /repos/{owner}/{repo}/contents/{path}?ref={branch}` and verify file absence after pre-existing SHA |
+| `create_pull_request` | Reconcilable (at-most-once dispatch) | `202 Accepted` + poll | Query `GET /repos/{owner}/{repo}/pulls?state=open&head={owner}:{head_branch}&base={base}` |
 
 ### 8.2 Request envelope
 
@@ -354,15 +394,16 @@ Every command MUST include a globally unique `request_id`, `contract_version`, `
 
 | State | Meaning | Allowed transition |
 |---|---|---|
-| `RECEIVED` | Envelope accepted and schema-validated. | `AUTHORIZED`, `REJECTED`, `EXPIRED` |
-| `AUTHORIZED` | Policy passed; confirmation may still be pending. | `AWAITING_APPROVAL`, `EXECUTING`, `REJECTED` |
-| `AWAITING_APPROVAL` | User confirmation required. | `EXECUTING`, `REJECTED`, `EXPIRED` |
+| `RECEIVED` | Envelope accepted and schema-validated. | `AUTHORIZED`, `REJECTED`, `EXPIRED`, `CANCELLED` |
+| `AUTHORIZED` | Policy passed; confirmation may still be pending. | `AWAITING_APPROVAL`, `EXECUTING`, `REJECTED`, `EXPIRED`, `CANCELLED` |
+| `AWAITING_APPROVAL` | User confirmation required. | `EXECUTING`, `REJECTED`, `EXPIRED`, `CANCELLED` |
 | `EXECUTING` | GitHub operation dispatched. | `SUCCEEDED`, `FAILED`, `OUTCOME_UNKNOWN` |
 | `SUCCEEDED` | GitHub result confirmed and recorded. | Terminal |
 | `FAILED` | Operation definitively failed. | Terminal |
 | `OUTCOME_UNKNOWN` | Request may have succeeded, but the acknowledgement or result is unavailable. | `RECONCILING`, `MANUAL_REVIEW` |
 | `RECONCILING` | Safe read-back or provider lookup is being used to determine the outcome. | `SUCCEEDED`, `FAILED`, `MANUAL_REVIEW` |
-| `EXPIRED` / `REJECTED` | Not executed. | Terminal |
+| `MANUAL_REVIEW` | Automated reconciliation could not decide; awaiting human resolution. | `SUCCEEDED`, `FAILED`, `CANCELLED` |
+| `EXPIRED` / `REJECTED` / `CANCELLED` | Not executed or cancelled before dispatch / via review dismissal. | Terminal |
 
 Persist only the minimum request metadata needed to prevent duplicate side effects and reconcile uncertain outcomes. Do not persist request bodies containing file content, unless an explicitly approved, encrypted, bounded queue design is added. A queue must have expiry, size limits, deletion rules and user-visible status.
 
@@ -436,13 +477,38 @@ Audit retention MUST be configurable and documented. Users MUST be able to inspe
 
 | Field | Meaning |
 |---|---|
-| `code` | Stable internal error code, for example `AUTH_FAILED`, `POLICY_DENIED`, `RATE_LIMITED`, `CONFLICT`, `UPSTREAM_UNAVAILABLE`, `OUTCOME_UNKNOWN`. |
-| `category` | One of validation, authentication, authorization, policy, transport, provider, resource-limit or internal. |
+| `code` | Stable internal error code from `schemas/error.v1.json` / `ErrorCode.kt`. |
+| `category` | One of `VALIDATION`, `AUTHENTICATION`, `AUTHORIZATION`, `POLICY`, `TRANSPORT`, `PROVIDER`, `RESOURCE_LIMIT`, `INTERNAL`. |
 | `http_status` | The relevant local HTTP status, where applicable. |
-| `retryable` | Whether retry is safe and recommended. |
-| `execution_state` | One of not started, executing, succeeded, failed, or outcome unknown. |
-| `message` | Sanitized user-readable explanation. |
+| `retryable` | Whether retry is safe and recommended (`OUTCOME_UNKNOWN` MUST remain `false`). |
+| `execution_state` | One of `NOT_STARTED`, `EXECUTING`, `SUCCEEDED`, `FAILED`, or `OUTCOME_UNKNOWN`. |
+| `message` | Sanitized user-readable explanation (never contains credentials, file content, or raw upstream bodies). |
 | `correlation_id` | Request correlation identifier; never a credential. |
+
+**Canonical error code mapping (`schemas/error.v1.json`):**
+
+| Code | Category | HTTP status | Retryable | Execution state | Meaning |
+|---|---|---|---|---|---|
+| `AUTH_FAILED` | `AUTHENTICATION` | `401` | `false` | `NOT_STARTED` | Missing or invalid transport credential. |
+| `FORBIDDEN` | `AUTHORIZATION` | `403` | `false` | `NOT_STARTED` | Disallowed `Host`/`Origin` header or unauthorized scope. |
+| `POLICY_DENIED` | `POLICY` | `403` | `false` | `NOT_STARTED` | Unapproved repository, protected branch/path, or denied operation. |
+| `APPROVAL_DECLINED` | `AUTHORIZATION` | `403` | `false` | `NOT_STARTED` | User explicitly declined required confirmation. |
+| `VALIDATION_FAILED` | `VALIDATION` | `400` | `false` | `NOT_STARTED` | Malformed envelope, unknown fields, invalid path, or operation mismatch. |
+| `UNSUPPORTED_VERSION` | `VALIDATION` | `400` | `false` | `NOT_STARTED` | Unknown or unsupported major `contract_version`. |
+| `EXPIRED` | `VALIDATION` | `400` | `false` | `NOT_STARTED` | Request exceeded `expires_at` before dispatch. |
+| `REPLAY_DETECTED` | `VALIDATION` | `409` | `false` | `NOT_STARTED` | Duplicate `seq` or `request_id` reuse with conflicting fingerprint. |
+| `NOT_FOUND` | `PROVIDER` | `404` | `false` | `FAILED` | Unknown `request_id`, route, repository, branch, or file. |
+| `CONFLICT` | `PROVIDER` | `409` | `false` | `FAILED` | GitHub SHA/head conflict or non-cancellable terminal state. |
+| `UNSUPPORTED_CONTENT` | `VALIDATION` | `422` | `false` | `FAILED` | Binary or non-UTF-8 file content on text `read_file`. |
+| `PAYLOAD_TOO_LARGE` | `RESOURCE_LIMIT` | `413` | `false` | `NOT_STARTED` | Request, response, or frame exceeds Appendix D limits. |
+| `RATE_LIMITED` | `RESOURCE_LIMIT` | `429` | `true` | `NOT_STARTED` | Local or upstream rate limit exceeded; retry with `DV-RTB-BACKOFF` / `Retry-After`. |
+| `UPSTREAM_UNAVAILABLE` | `PROVIDER` | `503` | `true` | `FAILED` | Transient upstream GitHub failure before confirmed dispatch; retry with `DV-RTB-BACKOFF`. |
+| `TIMEOUT` | `TRANSPORT` | `504` | `false` | `FAILED` | Pre-dispatch deadline exceeded. (Post-dispatch timeouts emit `OUTCOME_UNKNOWN`.) |
+| `OUTCOME_UNKNOWN` | `TRANSPORT` | `504` | `false` | `OUTCOME_UNKNOWN` | Dispatched without confirmed outcome; MUST reconcile before any action (RTB-43, RTB-44). |
+| `NOT_IMPLEMENTED` | `INTERNAL` | `501` | `false` | `NOT_STARTED` | Operation or adapter capability not implemented. |
+| `INTERNAL` | `INTERNAL` | `500` | `false` | `FAILED` | Unexpected internal bridge failure. |
+
+Retryable errors (`RATE_LIMITED`, `UPSTREAM_UNAVAILABLE`) MUST obey `DV-RTB-BACKOFF` (exponential with full jitter: initial `1 s`, multiplier `2`, maximum `60 s`, maximum `5` attempts or until deadline). `OUTCOME_UNKNOWN` MUST remain `retryable: false`.
 
 ## 12. Provisioning and administration
 
@@ -495,7 +561,7 @@ The local interface is intentionally independent of Cloudflare and remote-agent 
 
 The system makes no unsupported exactly-once or uninterrupted-service guarantees. It uses request IDs, deduplication, explicit lifecycle states, safe reconciliation of uncertain writes, bounded retries and clear outcome reporting. It stores no Git working tree and no persistent repository-content cache.
 
-This document is a review-ready architecture specification. Owner decisions, including port policy, local authentication, IPv6 loopback, relay security profile, confirmation defaults, offline queue policy, numeric limit starting points, Android SDK levels and the GitHub API version pin, are recorded in Appendix E. Remaining work before an approved baseline is limited to the contract schemas, policy detail, validation gates and document hygiene listed in the [companion exit-tasks document](remote_repository_tool_bridge_v2_draft_exit_tasks.md).
+This document is a review draft architecture specification. Owner decisions, including port policy, local authentication, IPv6 loopback, relay security profile, confirmation defaults, offline queue policy, numeric limit starting points, Android SDK levels, the GitHub API version pin, and Phase A contract decisions (`RTB-D10` … `RTB-D17`), are recorded in Appendix E. Remaining work before an approved baseline is limited to validation gates and remaining document hygiene tracked in the [companion exit-tasks document](remote_repository_tool_bridge_v2_draft_exit_tasks.md).
 
 ## 16. Versioning and compatibility
 
@@ -554,41 +620,42 @@ An unknown major contract version MUST fail closed (RTB-08).
 | Version | Date | Change |
 |---|---|---|
 | 2.0-draft | 25 November 2026 | Restructured to the house format: metadata header, terms glossary, identifier-bearing architecture rules, conformance tests, and named defaults. No technical decision changed. Owner decisions are recorded in Appendix E. |
+| 2.0-draft | 26 November 2026 | Closed Phase A contract decisions (`RTB-D10`–`RTB-D17`): RTB-49 canonical path algorithm and test vectors, Local Transport response model and `::1` alignment, lifecycle edges and delivery table, full 18-code error catalog, `create_pull_request` head/idempotency rules, allow-list lowercase canonicalization and default protected lists, relay window/expiry defaults, and §4.3/§15 consistency cleanup. |
 
-## Appendix A: Example canonical request envelope
+## Appendix A: Canonical request envelope
 
-Illustrative JSON shape; final field names and schemas are owned by the Tool Contract.
+Normative JSON conforming to `schemas/tool-contract.v1.json#/$defs/RequestEnvelope`:
 
 ```json
 {
   "contract_version": "1.0",
-  "request_id": "urn:uuid:<unique-id>",
-  "issued_at": "2026-11-24T20:00:00Z",
-  "expires_at": "2026-11-24T20:01:00Z",
+  "request_id": "urn:uuid:550e8400-e29b-41d4-a716-446655440000",
+  "issued_at": "2026-11-26T15:00:00Z",
+  "expires_at": "2026-11-26T15:05:00Z",
   "principal": {
-    "id": "local-client:<paired-client-id>",
+    "id": "local-client:paired-01",
     "transport": "localhost"
   },
   "operation": "read_file",
   "arguments": {
-    "repo": "owner/repository",
+    "repo": "example-org/sandbox",
     "path": "README.md",
     "ref": "main"
   }
 }
 ```
 
-## Appendix B: Example localhost routes
+## Appendix B: Localhost routes
 
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/api/v1/health` | Non-sensitive liveness. |
 | `GET` | `/api/v1/capabilities` | Contract version and supported operations; no secrets. |
-| `POST` | `/api/v1/tools/{operation}` | Submit a canonical tool request. |
+| `POST` | `/api/v1/tools/{operation}` | Submit a canonical tool request (`200` sync for `list_branches`, `read_file`; `202` + poll for `create_branch`, `write_file`, `delete_file`, `create_pull_request`). |
 | `GET` | `/api/v1/requests/{request_id}` | Read request lifecycle status. |
-| `POST` | `/api/v1/requests/{request_id}/cancel` | Request cancellation, where safe and supported. |
+| `POST` | `/api/v1/requests/{request_id}/cancel` | Idempotent cancellation of cancellable states (`RECEIVED`, `AUTHORIZED`, `AWAITING_APPROVAL`, `MANUAL_REVIEW`) to `CANCELLED`. |
 
-The final Local Transport Contract must define whether request submission is synchronous, or returns an accepted request ID for later status polling. Long-running or approval-gated operations SHOULD use accepted-request semantics.
+Errors returned for an established request use `ResponseEnvelope`; pre-request transport/authentication/guard failures use `TransportError` (`schemas/local-transport.v1.json`).
 
 ## Appendix C: External references
 
@@ -630,17 +697,21 @@ No default value is stated anywhere else in this specification. Each default is 
 | `DV-RTB-TARGET-SDK` | Target Android SDK | Latest stable at implementation time (**34** or **35**). |
 | `DV-RTB-FGS-TYPE` | Foreground-service type | The type appropriate for a long-running local HTTP service with an optional outbound WebSocket (`specialUse` or the closest matching type). Exact type recorded at implementation time. |
 | `DV-RTB-GITHUB-API-VERSION` | GitHub REST API version header | A concrete, currently supported date-based version (e.g. `2022-11-28` or later supported equivalent). Recorded at implementation time; never floats on “latest”. |
+| `DV-RTB-RELAY-SEQ-WINDOW` | Relay monotonic `seq` window | **64** sequence numbers per device session (`RTB-D17`). |
+| `DV-RTB-RELAY-EXPIRY-S` | Relay maximum request lifetime | **300** seconds (5 minutes) (`RTB-D17`). |
+| `DV-RTB-PROTECTED-BRANCHES` | Default protected branches | `main`, `master` (`RTB-D15`). |
+| `DV-RTB-PROTECTED-PATHS` | Default protected paths | `.github/workflows/**`, `.git/**`, `.gitana/**`, and policy/configuration files unless explicitly enabled (`RTB-D15`). |
 
 **Notes**
 
 - All byte limits are hard ceilings. Implementations MUST reject oversized inputs before parsing or buffering.
 - Timeouts are independent; the tightest applicable deadline wins.
 - Rate limits, concurrency, and retention values are starting points. Raise or lower them only after measurement on target devices and after confirming they do not create denial-of-service or resource-exhaustion risks.
-- Port, credential, confirmation, queue, and relay-profile defaults implement the corresponding owner decisions recorded in Appendix E (`RTB-D01` … `RTB-D09`).
+- Port, credential, confirmation, queue, and relay-profile defaults implement the corresponding owner decisions recorded in Appendix E (`RTB-D01` … `RTB-D17`).
 
 ## Appendix E: Decision log
 
-Owner decisions recorded on 25 November 2026. Each decision has an identifier so that companion specifications can cite it without restating it.
+Owner decisions recorded on 25 November 2026 (`RTB-D01`–`RTB-D09`) and 26 November 2026 (`RTB-D10`–`RTB-D17`). Each decision has an identifier so that companion specifications can cite it without restating it.
 
 | ID | Decision | Chosen value / policy |
 |---|---|---|
@@ -653,3 +724,11 @@ Owner decisions recorded on 25 November 2026. Each decision has an identifier so
 | `RTB-D07` | Numeric limits | Conservative starting defaults, tuned after device testing. Request body and file size 1–4 MiB. Response size 4–8 MiB. WebSocket frame 1 MiB. Concurrent in-flight requests 2–4. Read and write timeouts 30–60 s. Rate limits modest per-principal and global, approximately 30 requests per minute for the local path. Backoff exponential with jitter, capped. Audit retention 7–30 days of metadata only, no content. See Appendix D. |
 | `RTB-D08` | Android SDK and foreground-service type | `minSdk` 26, or 28 if Keystore or foreground-service features require it. `targetSdk` the latest stable (34 or 35). Use the foreground-service type that matches a long-running local HTTP service with an optional WebSocket; the exact type chosen is documented. See `DV-RTB-MIN-SDK`, `DV-RTB-TARGET-SDK`, `DV-RTB-FGS-TYPE`. |
 | `RTB-D09` | GitHub REST API version header | Pin to a concrete, currently supported date-based version and record the exact value at implementation time. Do not float on "latest". See `DV-RTB-GITHUB-API-VERSION`. |
+| `RTB-D10` | Local transport response model | `list_branches` and `read_file` return synchronous `200` (`ResponseEnvelope`); `create_branch`, `write_file`, `delete_file`, and `create_pull_request` return `202` + poll (`AcceptedResponse`). Transport-level failures without a `request_id` return `TransportError`. |
+| `RTB-D11` | Lifecycle states & cancel route | `MANUAL_REVIEW` and `CANCELLED` are first-class states; `POST /api/v1/requests/{request_id}/cancel` is supported and idempotent for pre-dispatch states (`RECEIVED`, `AUTHORIZED`, `AWAITING_APPROVAL`) and `MANUAL_REVIEW`. `OUTCOME_UNKNOWN` transitions to `RECONCILING` or `MANUAL_REVIEW`. |
+| `RTB-D12` | `create_pull_request` rules | `head` accepts `branch` and `owner:branch`. Equivalent open PRs return `SUCCEEDED` idempotently with `already_existed: true` and a `note`. |
+| `RTB-D13` | Repository name canonicalization | Normalize `owner/repo` to lowercase; accept current canonical name only (no automatic rename following); reject any other form with a typed error. |
+| `RTB-D14` | RTB-49 path normalization | Deterministic 8-step normalization algorithm with root-escape rejection and case-sensitive containment checks; verified against `schemas/path-normalization-test-vectors.v1.json`. |
+| `RTB-D15` | Default protected branches & paths | Protected branches: `main`, `master`. Protected paths: `.github/workflows/**`, `.git/**`, `.gitana/**`, and policy/config files unless explicitly enabled. |
+| `RTB-D16` | Error catalog & retry bounds | Full 18-code catalog in `schemas/error.v1.json` and `ErrorCode.kt`; backoff `1 s` initial, `60 s` max, exponential with full jitter (`DV-RTB-BACKOFF`); `OUTCOME_UNKNOWN` stays `retryable: false`. |
+| `RTB-D17` | Relay transport parameters | Trusted-relay profile only (E2E deferred); `seq` window `64` (`DV-RTB-RELAY-SEQ-WINDOW`); max request expiry `5 minutes` / `300 s` (`DV-RTB-RELAY-EXPIRY-S`); replay detection mandatory; expired requests never execute after reconnect. |

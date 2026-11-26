@@ -20,22 +20,22 @@ task below is complete. Source references point to sections of the specification
 ## 2. Contract definitions (spec §4.3, §8.2, §11.1, Appendix A/B)
 
 - [x] Publish machine-readable schemas (JSON Schema or OpenAPI) for the Tool Contract: all six operations, inputs, outputs, side effects. (`bridge/contracts/SCHEMAS.md`)
-- [ ] Define the Local Transport Contract: base path, headers, auth, limits, timeouts, and whether submission is synchronous or accepted-then-poll (Appendix B).
-- [ ] Define the canonical request/response envelope and replace the "illustrative" Appendix A.
-- [ ] Define the full error code catalog and mapping to `category`, `http_status`, `retryable`, `execution_state`.
-- [ ] Define the Execution Lifecycle Contract, including `MANUAL_REVIEW`, `CANCELLED` and a per-operation delivery guarantee (spec §8.1). Reconcile the state table with the contract list.
+- [x] Define the Local Transport Contract: base path, headers, auth, limits, timeouts, and whether submission is synchronous or accepted-then-poll (Appendix B, `RTB-D10`).
+- [x] Define the canonical request/response envelope and replace the "illustrative" Appendix A (`RTB-D10`).
+- [x] Define the full error code catalog and mapping to `category`, `http_status`, `retryable`, `execution_state` (`RTB-D16`).
+- [x] Define the Execution Lifecycle Contract, including `MANUAL_REVIEW`, `CANCELLED` and a per-operation delivery guarantee (spec §8.1). Reconcile the state table with the contract list (`RTB-D11`).
 - [x] Define the Authorization Contract, Credential Contract and Audit Event Contract schemas. (`bridge/contracts/SCHEMAS.md`)
-- [ ] Define contract versioning and unknown-field compatibility rules.
-- [ ] Define the Relay Transport Contract: device identity, session binding, expiry, replay detection, sequence/correlation, acknowledgements.
-- [ ] If the end-to-end profile is chosen: specify key agreement, identity binding, nonce/sequence rules, authenticated encryption, rotation and recovery, then obtain independent cryptographic review.
+- [x] Define contract versioning and unknown-field compatibility rules (spec §16, `bridge/contracts/SCHEMAS.md`).
+- [x] Define the Relay Transport Contract: device identity, session binding, expiry, replay detection, sequence/correlation, acknowledgements (`RTB-D17`).
+- [ ] If the end-to-end profile is chosen: specify key agreement, identity binding, nonce/sequence rules, authenticated encryption, rotation and recovery, then obtain independent cryptographic review. *(Deferred per `RTB-D04`/`RTB-D17`; trusted-relay profile selected.)*
 
 ## 3. Policy and GitHub behavior (spec §7)
 
-- [ ] Specify path canonicalization rules and the default protected-path/branch lists.
-- [ ] Define `create_pull_request` head owner/branch syntax and existing-PR detection.
-- [ ] Specify handling of empty repositories, binary and oversized files, and Base64 edge cases.
-- [ ] Specify rate-limit and secondary-rate-limit backoff bounds.
-- [ ] Specify upstream error normalization and what may be surfaced.
+- [x] Specify path canonicalization rules and the default protected-path/branch lists (`RTB-D13`, `RTB-D14`, `RTB-D15`, `schemas/path-normalization-test-vectors.v1.json`).
+- [x] Define `create_pull_request` head owner/branch syntax and existing-PR detection (`RTB-D12`).
+- [x] Specify handling of empty repositories, binary and oversized files, and Base64 edge cases (spec §7.1).
+- [x] Specify rate-limit and secondary-rate-limit backoff bounds (`DV-RTB-BACKOFF`, `RTB-D16`).
+- [x] Specify upstream error normalization and what may be surfaced (spec §7.1, §11.1, `schemas/error.v1.json`).
 
 ## 4. Validation required by release gates (spec §13, §13.1)
 
@@ -51,7 +51,7 @@ task below is complete. Source references point to sections of the specification
 
 ## 5. Document hygiene
 
-- [ ] Reconcile status wording: §15 calls the document "review-ready" while the header says "Review draft".
+- [x] Reconcile status wording: §15 calls the document "review-ready" while the header says "Review draft".
 - [ ] Complete a technical review and security review; record reviewers and outcomes.
 - [ ] Add a changelog and change the status/version header from `2.0-draft`.
 - [ ] Re-verify Appendix C external references against pinned versions.

@@ -60,7 +60,7 @@
     "RepositoryFullName": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,38}/[A-Za-z0-9_.-]{1,100}$",
-      "description": "'owner/name'. Resolved against the approved-repository record; never used as a URL fragment (spec 7)."
+      "description": "'owner/name'. Normalized to lowercase before allow-list lookup; only the current canonical name is accepted (renames are not automatically followed). Resolved against the approved-repository record; never used as a URL fragment (spec 7)."
     },
     "BranchName": {
       "type": "string",

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:gitbridge:schema:lifecycle.v1",
   "title": "Execution Lifecycle Contract",
-  "description": "Request states and allowed transitions (spec 8.3), mirroring RequestState.kt. Edges involving MANUAL_REVIEW and CANCELLED are proposals pending review, as noted in RequestState.kt. Terminal states: SUCCEEDED, FAILED, EXPIRED, REJECTED, CANCELLED.",
+  "description": "Request states and allowed transitions (spec 8.3), mirroring RequestState.kt. Finalized per Phase A (A3): MANUAL_REVIEW and CANCELLED are first-class lifecycle states. Terminal states: SUCCEEDED, FAILED, EXPIRED, REJECTED, CANCELLED.",
   "$defs": {
     "State": {
       "type": "string",
@@ -82,6 +82,7 @@
                   "AWAITING_APPROVAL",
                   "EXECUTING",
                   "REJECTED",
+                  "EXPIRED",
                   "CANCELLED"
                 ]
               }
@@ -196,7 +197,8 @@
               "to": {
                 "enum": [
                   "SUCCEEDED",
-                  "FAILED"
+                  "FAILED",
+                  "CANCELLED"
                 ]
               }
             }

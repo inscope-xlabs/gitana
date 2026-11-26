@@ -1,0 +1,164 @@
+# Phase A Decision Questions – Gitana Tool Bridge
+
+**Instructions**  
+1. Answer each question below (or write “accept default”).  
+2. Approve / sign the Authorisation block at the end.  
+3. Save this file and re-upload it when you are ready for the agent to execute Phase A.
+
+---
+
+## 1. Local Transport Response Model (A2 + A3)
+
+**Question:** For each of the six operations, should the local HTTP endpoint return a synchronous `200` with the final result, or a `202 Accepted` + poll via the status endpoint?
+
+**Default recommendation:**
+- `read_file` / `list_branches` → synchronous `200`
+- `create_branch` / `write_file` / `delete_file` / `create_pull_request` → `202` + poll
+
+**Your answer:**  
+accept default
+
+---
+
+## 2. Lifecycle Edges & Cancel Route (A3)
+
+**Question:**  
+a) Should `MANUAL_REVIEW` and `CANCELLED` be first-class states in the lifecycle?  
+b) Should a cancel route exist on the local transport?
+
+**Default recommendation:**  
+- Yes to both.  
+- Transitions:  
+  - Any non-terminal state → `CANCELLED` (via cancel route or expiry)  
+  - `OUTCOME_UNKNOWN` → `MANUAL_REVIEW` when reconciliation cannot decide  
+- Cancel route: `POST /v1/requests/{id}/cancel` (idempotent)
+
+**Your answer:**  
+accept default
+
+---
+
+## 3. `create_pull_request` Head Syntax & Existing-PR Behaviour (A5)
+
+**Question:**  
+a) Accepted `head` values? (`branch` only, or also `owner:branch`?)  
+b) When an equivalent open PR already exists, should the operation return an error or the existing PR (idempotent)?
+
+**Default recommendation:**  
+- Accept both `branch` and `owner:branch`  
+- Idempotent: return the existing PR with status `SUCCEEDED` and a note that it already existed
+
+**Your answer:**  
+accept default
+
+---
+
+## 4. Repository Name Canonicalisation (A6)
+
+**Question:** How should repository names be handled (case, renames)?
+
+**Default recommendation:**  
+- Normalise to lowercase  
+- Accept the current canonical name only (do **not** automatically follow renames)  
+- Reject any other form with a typed error
+
+**Your answer:**  
+accept default
+
+---
+
+## 5. Default Protected Lists (A6)
+
+**Question:** Confirm or adjust the default protected branches and paths.
+
+**Default recommendation:**  
+- Protected branches: `main`, `master`  
+- Protected paths: `.github/workflows/**` and any path containing policy/config files (unless explicitly enabled)  
+- Everything else is writable subject to the allow-list and confirmation rules
+
+**Your answer:**  
+accept default
+
+---
+
+## 6. Path Normalisation Algorithm Edge Cases (A1)
+
+**Question:** Any special rules beyond the standard algorithm described in the plan (dot segments, `..`, percent-encoding, NFC, case sensitivity, symlink escape, etc.)?
+
+**Default recommendation:**  
+- Follow the algorithm exactly as sketched in A1  
+- Reject (do not resolve) any path that would escape the repository root after canonicalisation  
+- Treat the filesystem as case-sensitive for containment checks even if the underlying FS is case-insensitive
+
+**Your answer:**  
+accept default
+
+---
+
+## 7. Error Catalog & Retry Bounds (A4)
+
+**Question:** Confirm backoff bounds and that `OUTCOME_UNKNOWN` remains non-retryable.
+
+**Default recommendation:**  
+- Backoff: initial 1 s, max 60 s, exponential with jitter (from `DV-RTB-BACKOFF`)  
+- `OUTCOME_UNKNOWN` → `retryable: false`  
+- All other codes follow the mapping already partially present in `error.v1.json`
+
+**Your answer:**  
+accept default
+
+---
+
+## 8. Relay Transport Contract (A7)
+
+**Question:** Any deviations from the “trusted-relay profile only, E2E deferred” stance, or additional constraints on device identity / seq window / expiry?
+
+**Default recommendation:**  
+- Stick strictly to the trusted-relay profile  
+- Seq window: 64  
+- Request expiry: 5 minutes  
+- Replay detection mandatory; expired requests never execute after reconnect
+
+**Your answer:**  
+accept default
+
+---
+
+## 9. Documentation / Naming Cleanup (A8)
+
+**Question:** Any preferred wording for the lifecycle mapping table or the note that Navigation Transport is a separate plane?
+
+**Default recommendation:**  
+- Add a short mapping table between §4.3 prose names and `RequestState` enum values  
+- Explicit one-sentence note that the sample task does **not** inherit Navigation Transport session rules
+
+**Your answer:**  
+accept default
+
+---
+
+## Authorisation Statements
+
+I authorise the agent to:
+
+1. Edit the following existing files (and only these) as required to record the decisions above:
+   - All specification markdown under docs/ (including the main v2 spec, RTB tables, Appendix A, §4.3, §5.1, §5.2, §7, §11.1, §15, exit-tasks)
+   - bridge/contracts/src/main/resources/schemas/*.json
+   - bridge/contracts/src/main/resources/openapi/bridge.v1.yaml
+   - SCHEMAS.md
+   - cloudflare_relay_specification.md
+   - Any Kotlin files that currently contain only TODOs or stubs that are named in Phase A (e.g. RequestState.kt, ErrorCode.kt) solely to keep them in sync with the updated schemas.
+
+2. Add the new file schemas/path-normalization-test-vectors.v1.json.
+
+3. Update exit-tasks checkboxes that become true once the decisions are recorded.
+
+4. Make no functional code changes beyond what is required to keep schema/Kotlin twins consistent. All implementation work belongs to later phases.
+
+5. Fail closed: leave any remaining stubs denying everything until their Phase B–F tasks are complete.
+
+**Approved by:** 
+Douglas J Wendell
+
+**Date:** 
+Thurs 26, Nov 2026

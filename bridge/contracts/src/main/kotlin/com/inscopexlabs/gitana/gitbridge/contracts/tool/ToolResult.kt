@@ -14,5 +14,10 @@ sealed interface ToolResult {
 
     data class FileDeleted(val path: String, val commitSha: String) : ToolResult
 
-    data class PullRequestCreated(val number: Int, val url: String) : ToolResult
+    data class PullRequestCreated(
+        val number: Int,
+        val url: String,
+        val alreadyExisted: Boolean = false,
+        val note: String? = null,
+    ) : ToolResult
 }

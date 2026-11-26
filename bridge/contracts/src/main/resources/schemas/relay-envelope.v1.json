@@ -2,7 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:gitbridge:schema:relay-envelope.v1",
   "title": "Relay Transport Contract",
-  "description": "Trusted-relay envelope (relay specification 6.2; DV-RTB-RELAY-PROFILE). The relay can see and modify these frames, so the phone re-validates the payload and enforces its own policy. The end-to-end protected profile is deferred pending design and independent cryptographic review and is deliberately not modelled here. Credentials never appear in an envelope.",
+  "description": "Trusted-relay envelope (relay specification 6.2; DV-RTB-RELAY-PROFILE). The relay can see and modify these frames, so the phone re-validates the payload and enforces its own policy. Sequence window is 64 (DV-RTB-RELAY-SEQ-WINDOW) and maximum request expiry is 300 seconds / 5 minutes (DV-RTB-RELAY-EXPIRY-S). The end-to-end protected profile is deferred pending design and independent cryptographic review and is deliberately not modelled here. Credentials never appear in an envelope.",
+  "x-relay-defaults": {
+    "profile": "trusted_relay",
+    "seq_window": 64,
+    "max_request_expiry_seconds": 300,
+    "replay_detection": "mandatory"
+  },
   "$defs": {
     "RelayEnvelope": {
       "type": "object",
@@ -47,7 +53,7 @@
         "seq": {
           "type": "integer",
           "minimum": 0,
-          "description": "Monotonic per device session, assigned by the relay. The phone rejects duplicate or out-of-window values."
+          "description": "Monotonic per device session, assigned by the relay Durable Object. Window size: 64 (DV-RTB-RELAY-SEQ-WINDOW). The phone rejects duplicate or out-of-window values."
         },
         "correlation_id": {
           "$ref": "urn:gitbridge:schema:common.v1#/$defs/CorrelationId"
@@ -56,7 +62,8 @@
           "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
         },
         "expires_at": {
-          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp"
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/Timestamp",
+          "description": "Maximum request lifetime is 5 minutes (300 seconds, DV-RTB-RELAY-EXPIRY-S). Expired messages MUST NOT execute after reconnect (RTB-47)."
         },
         "principal_assertion": {
           "type": "object",
@@ -106,6 +113,7 @@
           },
           "then": {
             "required": [
+              "correlation_id",
               "payload",
               "principal_assertion"
             ],
@@ -129,6 +137,7 @@
           },
           "then": {
             "required": [
+              "correlation_id",
               "payload"
             ],
             "properties": {
@@ -136,6 +145,28 @@
                 "$ref": "urn:gitbridge:schema:tool-contract.v1#/$defs/ResponseEnvelope"
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "ack",
+                  "status",
+                  "cancel",
+                  "error"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "correlation_id"
+            ]
           }
         }
       ]

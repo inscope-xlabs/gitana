@@ -44,6 +44,8 @@ The plans were written without sight of the current repository. Reconciled here:
 
 ## Phase A: Close the open decisions (blocking)
 
+> **Status: COMPLETED & CLOSED (26 November 2026).** All Phase A decisions (`A1`–`A8`) are recorded in `remote_repository_tool_bridge_v2_specification.md` (`RTB-D10`–`RTB-D17`), `cloudflare_relay_specification.md`, `bridge/contracts/SCHEMAS.md`, `bridge/contracts/src/main/resources/schemas/*.json` (including `path-normalization-test-vectors.v1.json`), `bridge/contracts/src/main/resources/openapi/bridge.v1.yaml`, and synced Kotlin contract twins (`RequestState.kt`, `ErrorCode.kt`, `ToolResult.kt`). Phases B–E are unblocked.
+
 No code dependencies. A1 to A7 may run in parallel. Each ends with the spec, schema, OpenAPI, `SCHEMAS.md` and
 exit-tasks checkboxes updated together.
 

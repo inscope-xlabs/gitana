@@ -1,0 +1,231 @@
+{
+  "$id": "urn:gitbridge:schema:path-normalization-test-vectors.v1",
+  "title": "RTB-49 Canonical Path Normalization Test Vectors",
+  "description": "Deterministic test vectors for the RTB-49 canonical path algorithm (spec 3.5 RTB-49, 7.2, and RTB-T10). Containment checks are always case-sensitive even if the host filesystem is case-insensitive.",
+  "version": "1.0",
+  "vectors": [
+    {
+      "id": "dot_current_segment_collapsed",
+      "input_kind": "raw_path",
+      "input": "src/./main",
+      "expected": "canonical",
+      "canonical": "src/main",
+      "algorithm_step": "RTB-49 step 6 (dot segment collapse)",
+      "reason": "Single dot segment '.' is collapsed without altering path semantics (RTB-T10)."
+    },
+    {
+      "id": "dot_current_mixed_case_preserved",
+      "input_kind": "raw_path",
+      "input": "src/./Main.kt",
+      "expected": "canonical",
+      "canonical": "src/Main.kt",
+      "algorithm_step": "RTB-49 steps 5, 6 (case preservation + dot collapse)",
+      "reason": "Dot segment collapsed while preserving exact character case."
+    },
+    {
+      "id": "parent_segment_within_repo_resolved",
+      "input_kind": "raw_path",
+      "input": "src/lib/../main",
+      "expected": "canonical",
+      "canonical": "src/main",
+      "algorithm_step": "RTB-49 step 6 (in-bounds '..' resolution)",
+      "reason": "Parent segment '..' pops 'lib' while remaining strictly inside repository root (RTB-T10)."
+    },
+    {
+      "id": "empty_segments_and_parent_within_protected_dir",
+      "input_kind": "raw_path",
+      "input": ".github//workflows/../workflows/ci.yml",
+      "expected": "canonical",
+      "canonical": ".github/workflows/ci.yml",
+      "algorithm_step": "RTB-49 step 6 (empty segment collapse + '..' resolution)",
+      "reason": "Empty segments and '..' resolve to canonical protected path so policy cannot be bypassed."
+    },
+    {
+      "id": "trailing_slash_stripped",
+      "input_kind": "raw_path",
+      "input": "src/main/",
+      "expected": "canonical",
+      "canonical": "src/main",
+      "algorithm_step": "RTB-49 step 6 (trailing slash normalization)",
+      "reason": "Trailing '/' is stripped from non-root paths."
+    },
+    {
+      "id": "traversal_escape_root",
+      "input_kind": "raw_path",
+      "input": "../../outside",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 6 (root-escape rejection)",
+      "reason": "Parent traversal above repository root MUST be rejected (RTB-T10)."
+    },
+    {
+      "id": "traversal_escape_passwd",
+      "input_kind": "raw_path",
+      "input": "../etc/passwd",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 6 (root-escape rejection)",
+      "reason": "Leading '..' escapes repository root and MUST be rejected."
+    },
+    {
+      "id": "traversal_escape_after_valid_prefix",
+      "input_kind": "raw_path",
+      "input": "src/../../outside",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 6 (root-escape rejection)",
+      "reason": "Stack underflow on second '..' escapes repository root and MUST be rejected."
+    },
+    {
+      "id": "leading_slash_rejected",
+      "input_kind": "raw_path",
+      "input": "/etc/passwd",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 6 (leading slash / absolute path rejection)",
+      "reason": "Repository paths are strictly relative; leading '/' is rejected fail-closed."
+    },
+    {
+      "id": "root_slash_only_rejected",
+      "input_kind": "raw_path",
+      "input": "/",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 6 (leading slash / empty path rejection)",
+      "reason": "Root slash has no target path and is rejected."
+    },
+    {
+      "id": "dot_only_rejected",
+      "input_kind": "raw_path",
+      "input": ".",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 6 (empty canonical segment stack)",
+      "reason": "Collapsing '.' leaves an empty relative path, which is rejected."
+    },
+    {
+      "id": "empty_string_rejected",
+      "input_kind": "raw_path",
+      "input": "",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 1 (empty input rejection)",
+      "reason": "Empty paths MUST be rejected."
+    },
+    {
+      "id": "nul_control_character_rejected",
+      "input_kind": "raw_path",
+      "input": "src/\u0000main.kt",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 1 (control character rejection)",
+      "reason": "NUL and C0/DEL control characters MUST be rejected."
+    },
+    {
+      "id": "backslash_traversal_rejected",
+      "input_kind": "raw_path",
+      "input": "src\\..\\x",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 2 (backslash rejection)",
+      "reason": "Backslashes MUST be rejected rather than converted to '/'."
+    },
+    {
+      "id": "backslash_separator_rejected",
+      "input_kind": "raw_path",
+      "input": "src\\main.kt",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 2 (backslash rejection)",
+      "reason": "Backslash path separators are invalid and MUST be rejected."
+    },
+    {
+      "id": "unicode_nfd_normalized_to_nfc",
+      "input_kind": "raw_path",
+      "input": "Cafe\u0301/README.md",
+      "expected": "canonical",
+      "canonical": "Caf\u00e9/README.md",
+      "algorithm_step": "RTB-49 step 4 (Unicode NFC normalization)",
+      "reason": "Decomposed NFD Unicode sequences normalize to NFC (RTB-T10)."
+    },
+    {
+      "id": "unicode_nfc_preserved",
+      "input_kind": "raw_path",
+      "input": "Caf\u00e9/README.md",
+      "expected": "canonical",
+      "canonical": "Caf\u00e9/README.md",
+      "algorithm_step": "RTB-49 step 4 (Unicode NFC normalization)",
+      "reason": "NFC path remains identical to normalized NFD equivalent (RTB-T10)."
+    },
+    {
+      "id": "case_preserved_titlecase",
+      "input_kind": "raw_path",
+      "input": "Readme",
+      "expected": "canonical",
+      "canonical": "Readme",
+      "algorithm_step": "RTB-49 step 5 (case preservation)",
+      "reason": "Case MUST be preserved and never folded for containment (RTB-T10)."
+    },
+    {
+      "id": "case_preserved_uppercase",
+      "input_kind": "raw_path",
+      "input": "README",
+      "expected": "canonical",
+      "canonical": "README",
+      "algorithm_step": "RTB-49 step 5 (case preservation)",
+      "reason": "'Readme' and 'README' remain distinct canonical paths (RTB-T10)."
+    },
+    {
+      "id": "raw_percent_encoding_not_decoded",
+      "input_kind": "raw_path",
+      "input": "%2e%2e/secret",
+      "expected": "canonical",
+      "canonical": "%2e%2e/secret",
+      "algorithm_step": "RTB-49 step 3 (raw path: no percent-decoding)",
+      "reason": "A raw filesystem/repo path MUST NOT be percent-decoded; '%2e%2e' stays literal (RTB-T10)."
+    },
+    {
+      "id": "uri_percent_encoded_traversal_rejected",
+      "input_kind": "uri_path",
+      "input": "%2e%2e/secret",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 3 + step 6 (single-pass URI decode then traversal check)",
+      "reason": "URI-derived paths decode percent sequences once to '../secret', which is then rejected as traversal."
+    },
+    {
+      "id": "uri_double_encoded_not_double_decoded",
+      "input_kind": "uri_path",
+      "input": "%252e%252e/secret",
+      "expected": "canonical",
+      "canonical": "%2e%2e/secret",
+      "algorithm_step": "RTB-49 step 3 (single-pass URI decode only)",
+      "reason": "URI paths decode exactly once; '%252e' becomes literal '%2e', never '..'."
+    },
+    {
+      "id": "uri_invalid_percent_encoding_rejected",
+      "input_kind": "uri_path",
+      "input": "src/%ZZ/main.kt",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 3 (invalid percent-encoding rejection)",
+      "reason": "Invalid percent-encoding in a URI-derived path MUST be rejected (RTB-T10)."
+    },
+    {
+      "id": "uri_truncated_percent_encoding_rejected",
+      "input_kind": "uri_path",
+      "input": "src/main%2",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 3 (truncated percent-encoding rejection)",
+      "reason": "Truncated percent-encoding in a URI-derived path MUST be rejected."
+    },
+    {
+      "id": "symlink_escape_outside_repo_root_rejected",
+      "input_kind": "raw_path",
+      "input": "link/secret.txt",
+      "repo_root": "/workspaces/RepoA",
+      "symlink_target": "/outside/secret.txt",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 7 (symlink containment check)",
+      "reason": "A symlink resolving outside the canonical repository root MUST be rejected (RTB-T10)."
+    },
+    {
+      "id": "case_sensitive_containment_mismatch_rejected",
+      "input_kind": "raw_path",
+      "input": "link/secret.txt",
+      "repo_root": "/workspaces/RepoA",
+      "symlink_target": "/workspaces/repoa/secret.txt",
+      "expected": "reject",
+      "algorithm_step": "RTB-49 step 5 + step 7 (case-sensitive containment check)",
+      "reason": "Containment is evaluated case-sensitively even when the host FS is case-insensitive; '/workspaces/repoa' does not match '/workspaces/RepoA'."
+    }
+  ]
+}

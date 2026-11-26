@@ -13,8 +13,9 @@ Kotlin type in the same change.
 | `schemas/authorization.v1.json` | Policy decision |
 | `schemas/credential.v1.json` | Credential classes, local-client token format, non-secret metadata |
 | `schemas/audit-event.v1.json` | Audit event (no content, credentials or bodies) |
-| `schemas/local-transport.v1.json` | Loopback listener config, headers, accepted-request and capabilities bodies |
-| `schemas/relay-envelope.v1.json` | Trusted-relay envelope |
+| `schemas/local-transport.v1.json` | Loopback listener config, headers, response model, transport error, accepted-request and capabilities bodies |
+| `schemas/relay-envelope.v1.json` | Trusted-relay envelope (`seq` window 64, 5-minute max expiry) |
+| `schemas/path-normalization-test-vectors.v1.json` | RTB-49 canonical path normalization test vectors (RTB-T10) |
 | `openapi/bridge.v1.yaml` | Local HTTP routes (Appendix B) |
 
 Schemas reference each other by `urn:gitbridge:schema:<name>` `$id`, not by relative path.
@@ -34,7 +35,5 @@ Schemas reference each other by `urn:gitbridge:schema:<name>` `$id`, not by rela
 
 ## Not yet defined
 
-- Full error-code catalog and its mapping to `category`, `http_status` and `retryable`.
-- Per-operation delivery guarantee (§8.1) and whether local submission is synchronous or accepted-then-poll.
-- `create_pull_request` head owner/branch syntax; policy configuration records.
+- Policy configuration persistence records (Phase B B11, backed by `PolicyDataStore`).
 - A test that fails when a schema enum drifts from its Kotlin enum (needs a JSON library in the catalog).

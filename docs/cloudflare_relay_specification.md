@@ -61,7 +61,7 @@ All routes are versioned under `/relay/v1/`. Only the routes below are allowed; 
 | Method | Route | Caller | Purpose |
 | --- | --- | --- | --- |
 | GET (Upgrade) | `/relay/v1/device/connect` | Phone | Establish the device WebSocket. Auth: relay-device credential. |
-| POST | `/relay/v1/agent/devices/{device_id}/requests` | Agent | Submit a canonical tool request envelope. Returns `202` with a relay correlation ID, or a synchronous result if the contract selects sync mode (D4). |
+| POST | `/relay/v1/agent/devices/{device_id}/requests` | Agent | Submit a canonical tool request envelope. Returns `202` with a relay correlation ID for polling (or synchronous `200` for read-only operations where enabled, matching v2 `RTB-D10`). |
 | GET | `/relay/v1/agent/devices/{device_id}/requests/{request_id}` | Agent | Poll status/result of a request. |
 | POST | `/relay/v1/agent/devices/{device_id}/requests/{request_id}/cancel` | Agent | Request cancellation where supported. |
 | GET | `/relay/v1/agent/devices/{device_id}/status` | Agent | Device presence (`online`/`offline`) and contract version. No secrets. |
@@ -76,25 +76,33 @@ An agent MUST only reach devices it has been explicitly granted. Device IDs MUST
 
 The relay envelope wraps the canonical Tool Contract request from v2 §8.2 without altering its meaning. The relay adds transport fields only. The phone validates the inner command independently.
 
-### 6.2 Relay envelope (illustrative; schema to be published)
+### 6.2 Relay envelope (schema: [`relay-envelope.v1.json`](../bridge/contracts/src/main/resources/schemas/relay-envelope.v1.json))
 
 ```json
 {
   "relay_version": "1.0",
   "type": "request",
-  "device_id": "dev_<opaque>",
-  "session_id": "<server-generated>",
+  "device_id": "dev_01J9XK2M8P",
+  "session_id": "sess_01J9XK2R4T",
   "seq": 42,
-  "correlation_id": "<relay-generated>",
-  "issued_at": "2026-11-24T20:00:00Z",
-  "expires_at": "2026-11-24T20:01:00Z",
+  "correlation_id": "corr-01J9XK2S9W",
+  "issued_at": "2026-11-26T15:00:00Z",
+  "expires_at": "2026-11-26T15:05:00Z",
   "principal_assertion": {
-    "agent_id": "agent_<opaque>",
+    "agent_id": "agent_01J9XJ8Q1A",
     "scopes": ["read", "write"],
     "asserted_by": "relay",
-    "asserted_at": "2026-11-24T20:00:00Z"
+    "asserted_at": "2026-11-26T15:00:00Z"
   },
-  "payload": { "contract_version": "1.0", "request_id": "urn:uuid:...", "operation": "read_file", "arguments": { } }
+  "payload": {
+    "contract_version": "1.0",
+    "request_id": "urn:uuid:550e8400-e29b-41d4-a716-446655440000",
+    "issued_at": "2026-11-26T15:00:00Z",
+    "expires_at": "2026-11-26T15:05:00Z",
+    "principal": { "id": "relay-agent:agent_01J9XJ8Q1A", "transport": "relay" },
+    "operation": "read_file",
+    "arguments": { "repo": "example-org/sandbox", "path": "README.md", "ref": "main" }
+  }
 }
 ```
 
@@ -104,9 +112,9 @@ Message types: `request`, `response`, `ack`, `status`, `cancel`, `ping`/`pong` (
 
 - **Principal assertion.** Built by the relay from the verified agent identity. It MUST NOT include the agent credential. The phone maps the asserted agent to a canonical principal and applies its own per-agent policy (v2 §6.2, §6.3). The assertion's scopes are advisory to the phone, never a grant.
 - **Request ID uniqueness.** The agent-supplied `request_id` MUST be globally unique per agent. The relay rejects a `request_id` it has already accepted within the replay window and returns the existing status instead (§7).
-- **Expiry.** Every message carries `expires_at`. The relay MUST NOT deliver an expired request and MUST NOT forward a late response as a fresh success. Maximum lifetime is bounded (default proposal: 5 minutes; D6). The phone also enforces expiry independently (v2 §8.4).
-- **Ordering and sequence.** The Durable Object assigns a monotonically increasing `seq` per device session. The phone rejects out-of-window or duplicate sequence values.
-- **Acknowledgements.** The phone sends an `ack` when it has accepted a request into its lifecycle (RECEIVED), and a `response` when it reaches a terminal or outcome-unknown state. The relay maps these to agent-visible states and MUST preserve `OUTCOME_UNKNOWN` rather than converting it to failure or success (v2 §8.3, §8.4).
+- **Expiry.** Every message carries `expires_at`. Maximum lifetime is **5 minutes** (`300` seconds, v2 `DV-RTB-RELAY-EXPIRY-S`, `RTB-D17`). The relay MUST NOT deliver an expired request and MUST NOT forward a late response as a fresh success. The phone also enforces expiry independently; expired requests MUST NOT execute after reconnection (v2 §8.4, RTB-47).
+- **Ordering and sequence.** The Durable Object assigns a monotonically increasing `seq` per device session. The accepted sequence window is **64** (`DV-RTB-RELAY-SEQ-WINDOW`, `RTB-D17`). The phone performs mandatory replay detection and rejects duplicate or out-of-window sequence values.
+- **Acknowledgements.** The phone sends an `ack` (with matching `correlation_id`) when it has accepted a request into its lifecycle (`RECEIVED`), and a `response` (with matching `correlation_id`) when it reaches a terminal or `OUTCOME_UNKNOWN` state. The relay maps these to agent-visible states and MUST preserve `OUTCOME_UNKNOWN` rather than converting it to failure or success (v2 §8.3, §8.4).
 - **Delivery semantics.** The relay provides at-most-once delivery to the phone per `seq`. It MUST NOT automatically re-deliver a request that may have reached the phone (v2 §8.1, §8.4). Only requests never confirmed as sent over a live socket MAY be retried within their validity window.
 - **Unknown fields/versions.** Unknown major versions fail closed. Unknown minor fields are handled per the schema compatibility rules.
 
@@ -181,19 +189,19 @@ Retention for relay metadata is configurable, documented, and bounded. Operators
 
 ## 12. Error model
 
-The relay uses the v2 §11.1 error contract, with these relay-specific codes (stable names to be finalized):
+The relay uses the v2 §11.1 error contract (`schemas/error.v1.json`), with these relay-specific codes and phone `ErrorCode` mappings:
 
-| Code | Category | Retryable | Meaning |
-| --- | --- | --- | --- |
-| `RELAY_AUTH_FAILED` | authentication | no | Agent or device credential invalid. |
-| `RELAY_FORBIDDEN` | authorization | no | Agent not granted to this device. |
-| `DEVICE_OFFLINE` | transport | yes | Device socket not connected. |
-| `REQUEST_EXPIRED` | validation | no | Past `expires_at`. |
-| `REQUEST_REPLAYED` | validation | no | Duplicate `request_id`; existing status returned. |
-| `RATE_LIMITED` | resource-limit | yes | Limits exceeded; `Retry-After` supplied. |
-| `PAYLOAD_TOO_LARGE` | resource-limit | no | Body or frame over limit. |
-| `OUTCOME_UNKNOWN` | transport | no (reconcile) | Sent, result not confirmed. |
-| `RELAY_INTERNAL` | internal | yes | Relay fault before dispatch. |
+| Code | Category | Retryable | Phone `ErrorCode` mapping | Meaning |
+| --- | --- | --- | --- | --- |
+| `RELAY_AUTH_FAILED` | `AUTHENTICATION` | no | `AUTH_FAILED` | Agent or device credential invalid. |
+| `RELAY_FORBIDDEN` | `AUTHORIZATION` | no | `FORBIDDEN` | Agent not granted to this device. |
+| `DEVICE_OFFLINE` | `TRANSPORT` | yes | `UPSTREAM_UNAVAILABLE` | Device socket not connected. |
+| `REQUEST_EXPIRED` | `VALIDATION` | no | `EXPIRED` | Past `expires_at` (5-minute max lifetime). |
+| `REQUEST_REPLAYED` | `VALIDATION` | no | `REPLAY_DETECTED` | Duplicate `request_id` or out-of-window/duplicate `seq`. |
+| `RATE_LIMITED` | `RESOURCE_LIMIT` | yes | `RATE_LIMITED` | Limits exceeded; `Retry-After` supplied within `DV-RTB-BACKOFF`. |
+| `PAYLOAD_TOO_LARGE` | `RESOURCE_LIMIT` | no | `PAYLOAD_TOO_LARGE` | Body or frame over limit. |
+| `OUTCOME_UNKNOWN` | `TRANSPORT` | no (reconcile) | `OUTCOME_UNKNOWN` | Sent, result not confirmed. |
+| `RELAY_INTERNAL` | `INTERNAL` | yes | `INTERNAL` | Relay fault before dispatch. |
 
 ## 13. Testing and acceptance criteria
 
@@ -219,25 +227,25 @@ The relay uses the v2 §11.1 error contract, with these relay-specific codes (st
 | D1 | Cloudflare account topology and operator access model | Dedicated account/project, MFA, least-privilege tokens |
 | D2 | Agent authentication mechanism | Per-agent long-random bearer token or signed JWT; stored as verifier |
 | D3 | How WebSocket clients present credentials without query strings | Header if client supports it; otherwise authenticated first message before any command is accepted |
-| D4 | Sync vs. accepted-then-poll for agent requests | Accepted-then-poll (consistent with v2 Appendix B for approval-gated ops) |
-| D5 | Device ID format and registry location | Opaque random IDs; registry in DO/KV metadata only |
-| D6 | Maximum request lifetime | 5 minutes, configurable |
+| D4 | Sync vs. accepted-then-poll for agent requests | **Decided (`RTB-D10`):** Accepted-then-poll (`202`) for mutating ops; `200` sync optional for read-only ops |
+| D5 | Device ID format and registry location | Opaque random IDs (`dev_<opaque>`); registry in DO/KV metadata only |
+| D6 | Maximum request lifetime & `seq` window | **Decided (`RTB-D17`):** `5 minutes` (`300 s`), `seq` window `64` |
 | D7 | Offline queueing | None by default; fail fast with `DEVICE_OFFLINE` |
 | D8 | Result hand-back retention | 60 seconds, dropped on delivery |
 | D9 | Heartbeat and timeout values | 30 s ping / 90 s timeout, configurable |
 | D10 | Per-message MAC under trusted-relay profile | Adopt; reviewed before production |
 | D11 | Whether repository paths count as sensitive for logs | Treat as sensitive; do not log |
-| D12 | E2E profile timeline | Deferred until independent cryptographic review |
+| D12 | E2E profile timeline | **Decided (`RTB-D04`, `RTB-D17`):** Trusted-relay profile only; E2E deferred pending independent cryptographic review |
 
 ## 15. Tasks required to leave draft status
 
-- [ ] Resolve decisions D1-D12 and record them in a decision log.
-- [ ] Publish machine-readable schemas (relay envelope, error model, admin API) and an OpenAPI/AsyncAPI description.
+- [ ] Resolve remaining Cloudflare deployment decisions (D1–D3, D5, D7–D11) and record them in a decision log (D4, D6, D12 decided in v2 `RTB-D10`/`RTB-D17`).
+- [x] Publish machine-readable schemas for the relay envelope (`schemas/relay-envelope.v1.json`) and error model (`schemas/error.v1.json`); admin API schema remains pending.
 - [ ] Specify the credential presentation, pairing flow and rotation procedure in detail.
 - [ ] Verify all Cloudflare Workers / Durable Objects / Hibernation API behaviors and limits against current official documentation and record the versions reviewed. Statements about platform behavior in this draft are design intent, not verified facts.
 - [ ] Define the session-key derivation and per-message MAC (D10) and have it reviewed.
 - [ ] Write the threat model (relay compromise, malicious agent, stolen device credential, DO eviction races, replay).
 - [ ] Prototype and test hibernation, eviction and reconnect behavior; produce results for §13.
-- [ ] Align state names and error codes with the v2 Execution Lifecycle and Error contracts, and update v2 §5.2 / Appendix B accordingly.
+- [x] Align state names and error codes with the v2 Execution Lifecycle and Error contracts, and update v2 §5.2 / Appendix B accordingly (`RTB-D11`, `RTB-D16`, `RTB-D17`).
 - [ ] Define observability, alerting and incident-response runbooks.
 - [ ] Complete technical and security review, add a changelog, and update the status header.

@@ -2,7 +2,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:gitbridge:schema:local-transport.v1",
   "title": "Local Transport Contract",
-  "description": "Loopback HTTP listener configuration and headers (spec 5.1, RTB-03, RTB-22). Defaults are the Appendix D values (DV-RTB-*) and remain tunable after device testing. Routes are in openapi/bridge.v1.yaml.",
+  "description": "Loopback HTTP listener configuration, headers, response model, and transport error envelope (spec 5.1, RTB-03, RTB-21, RTB-22). Defaults are the Appendix D values (DV-RTB-*) and remain tunable after device testing. Routes are in openapi/bridge.v1.yaml.",
+  "x-response-model": {
+    "synchronous_200": [
+      "list_branches",
+      "read_file"
+    ],
+    "accepted_202_poll": [
+      "create_branch",
+      "write_file",
+      "delete_file",
+      "create_pull_request"
+    ],
+    "cancel_route": "POST /api/v1/requests/{request_id}/cancel"
+  },
   "$defs": {
     "ListenerConfig": {
       "type": "object",
@@ -93,10 +106,11 @@
       "type": "object",
       "required": [
         "authorization",
-        "content-type"
+        "content-type",
+        "host"
       ],
       "additionalProperties": true,
-      "description": "The credential travels only in the Authorization header, never in a URL, query string or argument.",
+      "description": "The credential travels only in the Authorization header, never in a URL, query string or argument. Host MUST be a loopback host (127.0.0.1, [::1], or localhost with optional port); Origin is disallowed unless explicitly loopback-matched (RTB-21).",
       "properties": {
         "authorization": {
           "type": "string",
@@ -105,6 +119,23 @@
         "content-type": {
           "type": "string",
           "pattern": "^application/json(;\\s*charset=utf-8)?$"
+        },
+        "host": {
+          "type": "string",
+          "pattern": "^(127\\.0\\.0\\.1|\\[::1\\]|localhost)(:[0-9]{1,5})?$"
+        }
+      }
+    },
+    "TransportError": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "description": "Transport-level error envelope returned when a request fails before a RequestEnvelope and request_id are established (e.g., 401 auth failure, 403 Host/Origin guard, 413 oversize body before parsing, 404 unknown route/request_id).",
+      "properties": {
+        "error": {
+          "$ref": "urn:gitbridge:schema:error.v1#/$defs/BridgeError"
         }
       }
     },
@@ -115,7 +146,7 @@
         "state"
       ],
       "additionalProperties": true,
-      "description": "Accepted-request semantics for long-running or approval-gated operations (spec Appendix B). Poll GET /api/v1/requests/{request_id}.",
+      "description": "Accepted-request semantics (HTTP 202) for mutating operations (create_branch, write_file, delete_file, create_pull_request). Poll GET /api/v1/requests/{request_id} or cancel via POST /api/v1/requests/{request_id}/cancel.",
       "properties": {
         "request_id": {
           "$ref": "urn:gitbridge:schema:common.v1#/$defs/RequestId"

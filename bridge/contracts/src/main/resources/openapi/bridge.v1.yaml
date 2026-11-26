@@ -3,12 +3,15 @@ info:
   title: Gitana Remote Repository Tool Bridge - Local Transport
   version: "1.0"
   description: |
-    Loopback HTTP surface of the bridge (spec 5.1, Appendix B). The listener binds only to loopback
-    addresses (RTB-03) and requires authentication even there (RTB-22). Bodies are JSON validated
-    against the schemas in ../schemas. Port and limits are the Appendix D defaults and are tunable.
+    Loopback HTTP surface of the bridge (spec 5.1, Appendix B). The listener binds to `127.0.0.1`
+    (mandatory) and `::1` when supported (non-fatal on failure; RTB-03), and requires authentication
+    (RTB-22). Bodies are JSON validated against the schemas in ../schemas. Port and limits are the
+    Appendix D defaults and are tunable.
 
-    Open decision (exit tasks section 2): whether submission is synchronous or accepted-then-poll.
-    Both responses are described; approval-gated and long-running operations SHOULD use 202.
+    Response model (Phase A A2/A3): `list_branches` and `read_file` return synchronous `200` with
+    `ResponseEnvelope`; mutating operations (`create_branch`, `write_file`, `delete_file`,
+    `create_pull_request`) return `202 Accepted` with `AcceptedResponse` and are polled via
+    `GET /api/v1/requests/{request_id}`.
 servers:
   - url: http://127.0.0.1:18765
     description: Default IPv4 loopback listener (DV-RTB-PORT).
@@ -49,6 +52,8 @@ paths:
       description: |
         The path operation MUST equal the envelope's `operation`. There is no generic proxy and no
         arbitrary path forwarding (RTB-19); only the six canonical operations are routable.
+        `list_branches` and `read_file` return synchronous `200`; `create_branch`, `write_file`,
+        `delete_file`, and `create_pull_request` return `202` + poll.
       parameters:
         - name: operation
           in: path
@@ -63,13 +68,13 @@ paths:
               $ref: ../schemas/tool-contract.v1.json#/$defs/RequestEnvelope
       responses:
         "200":
-          description: Request reached a terminal or outcome-unknown state.
+          description: Synchronous terminal or outcome-unknown result (`list_branches`, `read_file`).
           content:
             application/json:
               schema:
                 $ref: ../schemas/tool-contract.v1.json#/$defs/ResponseEnvelope
         "202":
-          description: Accepted. Poll the request status.
+          description: Accepted for asynchronous execution/approval (`create_branch`, `write_file`, `delete_file`, `create_pull_request`). Poll `GET /api/v1/requests/{request_id}`.
           content:
             application/json:
               schema:
@@ -106,12 +111,17 @@ paths:
   /api/v1/requests/{request_id}/cancel:
     post:
       operationId: cancelRequest
-      summary: Request cancellation, where safe and supported
+      summary: Cancel a cancellable or already-cancelled request (idempotent)
+      description: |
+        Transitions pre-dispatch states (`RECEIVED`, `AUTHORIZED`, `AWAITING_APPROVAL`) or `MANUAL_REVIEW`
+        to `CANCELLED`. Idempotent when the request is already `CANCELLED`. Returns `409 Conflict` if the
+        request is actively dispatching/reconciling (`EXECUTING`, `OUTCOME_UNKNOWN`, `RECONCILING`) or in
+        another terminal state (`SUCCEEDED`, `FAILED`, `EXPIRED`, `REJECTED`).
       parameters:
         - $ref: "#/components/parameters/RequestId"
       responses:
         "200":
-          description: Resulting lifecycle state.
+          description: Resulting lifecycle state (`CANCELLED`).
           content:
             application/json:
               schema:
@@ -139,8 +149,10 @@ components:
         $ref: ../schemas/common.v1.json#/$defs/RequestId
   responses:
     Error:
-      description: Failure. The body carries a sanitized error and the lifecycle state.
+      description: Failure. Carries a ResponseEnvelope when a request_id is established, or TransportError for pre-request transport/auth failures.
       content:
         application/json:
           schema:
-            $ref: ../schemas/tool-contract.v1.json#/$defs/ResponseEnvelope
+            oneOf:
+              - $ref: ../schemas/tool-contract.v1.json#/$defs/ResponseEnvelope
+              - $ref: ../schemas/local-transport.v1.json#/$defs/TransportError

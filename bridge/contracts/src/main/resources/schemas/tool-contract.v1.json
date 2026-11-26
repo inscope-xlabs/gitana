@@ -7,31 +7,49 @@
     "list_branches": {
       "mutating": false,
       "destructive": false,
+      "delivery_guarantee": "at_least_once",
+      "local_response_mode": "sync_200",
+      "reconciliation_entry_point": "GET /repos/{owner}/{repo}/branches",
       "result": "BranchList"
     },
     "create_branch": {
       "mutating": true,
       "destructive": false,
+      "delivery_guarantee": "reconcilable",
+      "local_response_mode": "accepted_202_poll",
+      "reconciliation_entry_point": "GET /repos/{owner}/{repo}/git/ref/heads/{new_branch}",
       "result": "BranchCreated"
     },
     "read_file": {
       "mutating": false,
       "destructive": false,
+      "delivery_guarantee": "at_least_once",
+      "local_response_mode": "sync_200",
+      "reconciliation_entry_point": "GET /repos/{owner}/{repo}/contents/{path}",
       "result": "FileContent"
     },
     "write_file": {
       "mutating": true,
       "destructive": false,
+      "delivery_guarantee": "reconcilable",
+      "local_response_mode": "accepted_202_poll",
+      "reconciliation_entry_point": "GET /repos/{owner}/{repo}/contents/{path}?ref={branch}",
       "result": "FileWritten"
     },
     "delete_file": {
       "mutating": true,
       "destructive": true,
+      "delivery_guarantee": "reconcilable",
+      "local_response_mode": "accepted_202_poll",
+      "reconciliation_entry_point": "GET /repos/{owner}/{repo}/contents/{path}?ref={branch}",
       "result": "FileDeleted"
     },
     "create_pull_request": {
       "mutating": true,
       "destructive": false,
+      "delivery_guarantee": "reconcilable",
+      "local_response_mode": "accepted_202_poll",
+      "reconciliation_entry_point": "GET /repos/{owner}/{repo}/pulls?state=open&head={owner}:{head_branch}&base={base}",
       "result": "PullRequestCreated"
     }
   },
@@ -166,6 +184,20 @@
         }
       }
     },
+    "PullRequestHead": {
+      "description": "Accepted head syntax per Phase A A5: either a bare 'branch' or qualified 'owner:branch'.",
+      "oneOf": [
+        {
+          "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
+        },
+        {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 295,
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?:(?!/)(?!.*//)(?!.*\\.\\.)(?!.*@\\{)(?!.*[\\x00-\\x20\\x7f~^:?*\\[\\\\])(?!.*(?:^|/)\\.)(?!.*\\.lock(?:/|$))(?!.*[/.]$)(?!@$).+$"
+        }
+      ]
+    },
     "CreatePullRequestArgs": {
       "type": "object",
       "additionalProperties": false,
@@ -180,8 +212,8 @@
           "$ref": "urn:gitbridge:schema:common.v1#/$defs/RepositoryFullName"
         },
         "head": {
-          "$ref": "urn:gitbridge:schema:common.v1#/$defs/GitRef",
-          "description": "Head branch. Head owner/branch syntax is an open task (exit tasks section 3)."
+          "$ref": "#/$defs/PullRequestHead",
+          "description": "Accepted syntax: 'branch' (resolved against the approved repo owner) or 'owner:branch'. Equivalent open PRs are returned idempotently as SUCCEEDED."
         },
         "base": {
           "$ref": "urn:gitbridge:schema:common.v1#/$defs/BranchName"
@@ -308,6 +340,16 @@
           "type": "string",
           "format": "uri",
           "maxLength": 2048
+        },
+        "already_existed": {
+          "type": "boolean",
+          "default": false,
+          "description": "True when an equivalent open PR already existed and was returned idempotently."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Optional status note, e.g. noting that an equivalent open PR already existed."
         }
       }
     },
@@ -555,6 +597,28 @@
             "required": [
               "error"
             ],
+            "not": {
+              "required": [
+                "result"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "CANCELLED",
+                  "MANUAL_REVIEW"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
             "not": {
               "required": [
                 "result"
