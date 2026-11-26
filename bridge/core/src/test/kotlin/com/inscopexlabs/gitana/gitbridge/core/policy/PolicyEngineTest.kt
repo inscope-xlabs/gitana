@@ -71,7 +71,7 @@ class PolicyEngineTest {
     fun `read on allow-listed repo with safe path and branch is allowed without approval`() =
         runBlocking {
             val decision = engine(config()).evaluate(
-                request(operation = ToolOperation.READ_FILE, branch = "main", path = "src/App.kt"),
+                request(operation = ToolOperation.READ_FILE, branch = "feature/x", path = "src/App.kt"),
                 canonicalPath = "src/App.kt",
             )
             assertTrue(decision.allowed)

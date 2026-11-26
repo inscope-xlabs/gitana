@@ -80,19 +80,24 @@ class ConfirmationRules(
          */
         val DEFAULT_RULES: List<ConfirmationRule> = listOf(
             // Read operations – no confirmation.
-            ConfirmationRule("get_file",     ConfirmationLevel.NONE),
-            ConfirmationRule("list_files",   ConfirmationLevel.NONE),
-            ConfirmationRule("read_tree",    ConfirmationLevel.NONE),
-            ConfirmationRule("get_metadata", ConfirmationLevel.NONE),
+            ConfirmationRule("read_file",           ConfirmationLevel.NONE),
+            ConfirmationRule("list_branches",       ConfirmationLevel.NONE),
+            ConfirmationRule("get_file",            ConfirmationLevel.NONE),
+            ConfirmationRule("list_files",          ConfirmationLevel.NONE),
+            ConfirmationRule("read_tree",           ConfirmationLevel.NONE),
+            ConfirmationRule("get_metadata",        ConfirmationLevel.NONE),
 
             // Write operations – require confirmation.
-            ConfirmationRule("create_file",  ConfirmationLevel.REQUIRED, "Creates a new file"),
-            ConfirmationRule("update_file",  ConfirmationLevel.REQUIRED, "Modifies an existing file"),
-            ConfirmationRule("delete_file",  ConfirmationLevel.REQUIRED, "Deletes a file"),
-            ConfirmationRule("batch_update", ConfirmationLevel.REQUIRED, "Batch write"),
+            ConfirmationRule("create_branch",       ConfirmationLevel.REQUIRED, "Creates a branch"),
+            ConfirmationRule("write_file",          ConfirmationLevel.REQUIRED, "Writes a file"),
+            ConfirmationRule("create_file",         ConfirmationLevel.REQUIRED, "Creates a new file"),
+            ConfirmationRule("update_file",         ConfirmationLevel.REQUIRED, "Modifies an existing file"),
+            ConfirmationRule("delete_file",         ConfirmationLevel.REQUIRED, "Deletes a file"),
+            ConfirmationRule("create_pull_request", ConfirmationLevel.REQUIRED, "Creates a pull request"),
+            ConfirmationRule("batch_update",        ConfirmationLevel.REQUIRED, "Batch write"),
 
             // Dangerous operations – always blocked.
-            ConfirmationRule("force_push",   ConfirmationLevel.BLOCKED,  "Force push is not permitted"),
+            ConfirmationRule("force_push",          ConfirmationLevel.BLOCKED,  "Force push is not permitted"),
         )
 
         private val FALLBACK_RULE = ConfirmationRule(
