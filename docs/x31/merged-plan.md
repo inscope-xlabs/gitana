@@ -18,8 +18,9 @@ paths covered by tests.
 5. A task is done only when its acceptance check passes and, where relevant, the exit-tasks checkbox is ticked.
 
 **Path convention.** `<m>:Name.kt` means
-`bridge/<m>/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/<m>/…/Name.kt` (the subpackage is shown where it
-matters). Tests mirror this under `src/test/kotlin`. Schemas live in
+`bridge/<m>/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/<m>/…/Name.kt` for bridge modules, and `app:Name.kt`
+means `app/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/…/Name.kt` for the `app` module (the subpackage is
+shown where it matters). Tests mirror this under `src/test/kotlin`. Schemas live in
 `bridge/contracts/src/main/resources/schemas/`, OpenAPI in `bridge/contracts/src/main/resources/openapi/`.
 
 ## Corrections to the source plans
@@ -163,10 +164,10 @@ conflict with no auto-retry; unmapped to a non-retryable upstream error. Depends
 
 ---
 
-## Phase D: Local transport (`bridge/local`, `bridge/app`)
+## Phase D: Local transport (`bridge/local`, `app`)
 
 **D1. Server, binding, guards and limits** (6a#7, 6b#18) `LocalServer.kt`, `LoopbackBinding.kt`,
-`HostHeaderGuard.kt`, `limits/LocalLimits.kt`; add the HTTP server dependency in `local/build.gradle.kts` (a version
+`HostHeaderGuard.kt`, `limits/LocalLimits.kt`; add the HTTP server dependency in `bridge/local/build.gradle.kts` (a version
 decision is needed; none exists yet). Bind `127.0.0.1:18765` (mandatory) and `::1` when supported; IPv6 failure is
 logged and non-fatal; IPv4 failure prevents start; refuse non-loopback. Appendix D limits. Extend
 `LoopbackBindingTest.kt`. Depends on A2.
@@ -201,7 +202,7 @@ dropped; `expires_at` enforced so nothing executes after reconnect (RTB-47). Dep
 
 ## Phase F: Wiring and audit
 
-**F1. Compose the app** (6a#9, 6b#26) `bridge/app/…/di/BridgeGraph.kt`. Both transports build the same
+**F1. Compose the app** (6a#9, 6b#26) `app/…/di/BridgeGraph.kt` (`app:di/BridgeGraph.kt`). Both transports build the same
 `BridgeService` with the same policy objects. Acceptance: one test asserts the two transports share one policy graph.
 
 **F2. Audit emission** (6a#9, 6b#27) `storage:audit/RoomAuditSink.kt`, `AuditDao.kt`, `AuditEntity.kt`,
