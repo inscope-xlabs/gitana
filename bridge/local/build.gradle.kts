@@ -21,8 +21,3 @@ dependencies {
   implementation(libs.ktor.server.body.limit)
   testImplementation(libs.junit)
 }
-
-// Print assertion messages in the build log, so socket test failures can be diagnosed from CI.
-tasks.withType<Test>().configureEach {
-  testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
-}
