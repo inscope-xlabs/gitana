@@ -18,5 +18,6 @@ dependencies {
   api(libs.kotlinx.coroutines.core)
   implementation(libs.ktor.server.core)
   implementation(libs.ktor.server.cio)
+  implementation(libs.ktor.server.body.limit)
   testImplementation(libs.junit)
 }

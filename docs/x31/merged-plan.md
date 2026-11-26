@@ -166,6 +166,12 @@ conflict with no auto-retry; unmapped to a non-retryable upstream error. Depends
 
 ## Phase D: Local transport (`bridge/local`, `app`)
 
+> **D1 status (26 November 2026):** implemented to Standard 1 (Stages 1 to 3 of
+> [`docs/Coding Standards.md`](../Coding%20Standards.md)); D2 and D3 are not started. Proposed dependency decision,
+> pending owner approval: Ktor **3.6.1** with the CIO engine. Open: Appendix D defines no connection limit and CIO
+> offers no maximum connection count (RTB-20); the rate limit is a single global bucket until D2 supplies a principal;
+> `app` wiring is Phase F.
+
 **D1. Server, binding, guards and limits** (6a#7, 6b#18) `LocalServer.kt`, `LoopbackBinding.kt`,
 `HostHeaderGuard.kt`, `limits/LocalLimits.kt`; add the HTTP server dependency in `bridge/local/build.gradle.kts` (a version
 decision is needed; none exists yet). Bind `127.0.0.1:18765` (mandatory) and `::1` when supported; IPv6 failure is
