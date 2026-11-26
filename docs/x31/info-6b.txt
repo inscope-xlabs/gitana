@@ -1,0 +1,235 @@
+Execution plan for the AI agent
+
+Ordering rationale: Phase A must land first because Tasks 6–15 and 16–17 depend on decisions that don't exist yet. Phase B (core pipeline) must land before Phase D/E (transports), because both transports call into BridgeService.submit. Phase C (GitHub adapter) can run in parallel with Phase D/E once Phase A+B land.
+
+Path caveat: I have the class names and module names from the repository, but not the exact src/main/kotlin/... package paths. Each task below names the file to complete; the agent must locate it first with e.g. grep -r "class BridgeService" bridge/. Do not create a duplicate file at a guessed path.
+
+---
+
+Phase A — Close the open decisions (blocking)
+
+1. Resolve the RTB-49 canonical path algorithm
+
+· Deliverable: the RTB-49 section of docs/remote_repository_tool_bridge_v2_specification.md rewritten to contain actual algorithm steps (not “the following deterministic algorithm” followed by nothing), plus a new file bridge/contracts/schemas/path-normalization-test-vectors.v1.json.
+· Acceptance: the test vectors cover ., .., //, leading /, trailing /, backslashes, percent-encoding, Unicode normalization, and case sensitivity; each vector has input, expected canonical output, or expected rejection.
+· Tag: [Open decision] — PR #8.
+
+2. Complete the Local Transport Contract
+
+· Deliverable: the §5 Local Transport Contract section of the spec, plus bridge/contracts/schemas/local-transport.v1.json updated to match.
+· Acceptance: request/response framing, header set, error envelope on transport failure, and the loopback IPv6 conflict from PR #8 are all resolved and consistent between spec and schema.
+· Tag: [Open decision] — exit tasks, PR #8.
+
+3. Decide the per-operation delivery guarantee
+
+· Deliverable: a new table in docs/remote_repository_tool_bridge_v2_specification.md (or docs/ as a referenced appendix) giving, for each of the six operations, the guarantee (at-most-once / at-least-once / reconcilable), the sync-vs-poll model, and the reconciliation entry point; mirror any new states into bridge/contracts/schemas/lifecycle.v1.json.
+· Acceptance: no operation is left undecided; every OUTCOME_UNKNOWN has a named reconciliation path.
+· Tag: [Open decision] — exit tasks.
+
+4. Publish the full error code catalog
+
+· Deliverable: extend the error enum in bridge/contracts/schemas/common.v1.json (or add bridge/contracts/schemas/errors.v1.json if the enum is intentionally separate) and update docs/…_specification.md error tables.
+· Acceptance: every BridgeError code emitted by Tasks 6–17 exists in the catalog with a retryable flag; OUTCOME_UNKNOWN is present with retryable: false.
+· Tag: [Open decision] — exit tasks.
+
+5. Decide create_pull_request head owner/branch syntax and existing-PR detection
+
+· Deliverable: the RTB row for create_pull_request in the spec, and the head field definition in bridge/contracts/schemas/common.v1.json (the GitRef pattern).
+· Acceptance: the accepted syntax (branch vs owner:branch) is stated, and the behavior when a PR already exists is stated (error vs idempotent return).
+· Tag: [Open decision] — exit tasks.
+
+---
+
+Phase B — Core pipeline (bridge/core)
+
+6. Implement the request pipeline
+
+· File: BridgeService.kt (replace the TODO("implement the spec 6.2 pipeline") in submit).
+· Deliverable: RECEIVED → AUTHORIZED → (AWAITING_APPROVAL) → EXECUTING → SUCCEEDED | FAILED, plus OUTCOME_UNKNOWN on lost acknowledgement after the GitHub call.
+· Acceptance: transition edges exactly match RequestState.kt and lifecycle.v1.json; no edge involving MANUAL_REVIEW or CANCELLED is used (those are still proposals).
+· Tag: [Scaffold or stub].
+
+7. Implement the policy engine
+
+· File: PolicyEngine.kt (replace the unconditional Deny(POLICY_DENIED, "Policy engine not implemented; failing closed")).
+· Deliverable: evaluation order = allow-list → protected branch → protected path → approval requirement; fails closed on any unknown.
+· Acceptance: unit tests for approved repo + writable branch + non-protected path → Allow; each single failure → the correct typed deny.
+· Tag: [Scaffold or stub].
+
+8. Implement canonical path normalization
+
+· File: PathNormalizer.kt.
+· Deliverable: implementation of the algorithm and test vectors produced in Task 1.
+· Acceptance: every vector in path-normalization-test-vectors.v1.json passes; normalize returns null only for vectors marked “expected rejection”.
+· Tag: [Scaffold or stub], depends on Task 1.
+
+9. Implement protected-path matching
+
+· File: ProtectedPaths.kt (currently returns true for everything).
+· Deliverable: match against the per-repo protected_paths list in the allow-list config, using the Task 8 normalizer.
+· Acceptance: docs/hello.md is not protected under default config; .github/workflows/* and equivalent defaults are.
+· Tag: [Scaffold or stub].
+
+10. Implement branch write rules
+
+· File: BranchRules.kt (currently returns false for everything).
+· Deliverable: isWritable allows non-protected, allow-listed branches; honors the protected_branches list (default should include main per spec).
+· Acceptance: docs/hello writable; main not writable; protected-branch write → POLICY_DENIED before any GitHub call.
+· Tag: [Scaffold or stub].
+
+11. Implement allow-list canonicalization
+
+· File: RepositoryAllowList.kt.
+· Deliverable: policyFor(repo) normalizes case and resolves GitHub renames/redirects before map lookup, or explicitly rejects non-canonical forms — whichever Task 2 decides.
+· Acceptance: Example-Org/Sandbox resolves identically to example-org/sandbox, or is rejected with a typed error, consistently.
+· Tag: [Scaffold or stub], depends on Task 2.
+
+12. Implement approval gating
+
+· Files: ApprovalGate.kt and ApprovalCoordinator.kt (currently deny all approvals).
+· Deliverable: suspend to AWAITING_APPROVAL, surface the approval prompt, resume on approve → EXECUTING, resume on decline → REJECTED.
+· Acceptance: create_pull_request blocks by default; write_file does not block under default policy; declining produces a denial error and no GitHub call.
+· Tag: [Scaffold or stub].
+
+13. Implement write serialization
+
+· File: WriteCoordinator.kt (serialize is TODO).
+· Deliverable: per-repo (or per-repo-branch) mutex so concurrent write_file / create_branch don't race.
+· Acceptance: two concurrent writes to the same branch are serialized; a test asserts ordering.
+· Tag: [Scaffold or stub].
+
+14. Implement duplicate detection
+
+· File: DuplicateDetector.kt (fingerprint is TODO).
+· Deliverable: fingerprint = request_id + operation + normalized arguments; suppress replay of the same fingerprint within the delivery window from Task 3.
+· Acceptance: replaying the same request_id after SUCCEEDED returns the cached result without a second GitHub call.
+· Tag: [Scaffold or stub], depends on Task 3.
+
+15. Implement outcome reconciliation
+
+· File: OutcomeReconciler.kt (reconcile is TODO("read-back reconciliation")).
+· Deliverable: for write_file, read the target branch/file (or the PR) and compare against the intended commit/content hash without storing content in the audit record; map result to SUCCEEDED, FAILED, or MANUAL_REVIEW.
+· Acceptance: simulated lost ack on write_file reconciles to SUCCEEDED when the commit is present and FAILED when absent; no blind replay (RTB-43, RTB-44).
+· Tag: [Scaffold or stub], depends on Tasks 3 and 16.
+
+---
+
+Phase C — GitHub adapter (bridge/github)
+
+16. Implement the GitHub REST client
+
+· File: GitHubAdapter.kt (currently throws NOT_IMPLEMENTED).
+· Deliverable: four operations — GET /repos/{o}/{r}/contents/{path} (read_file), POST /repos/{o}/{r}/git/refs after resolving base commit (create_branch), contents write after resolving existing file SHA (write_file), POST /repos/{o}/{r}/pulls (create_pull_request). The phone resolves file SHA and base commit SHA itself; the agent never supplies them (RTB-15).
+· Acceptance: contract tests against mocked REST responses for success, conflict, and 429; GitHubAdapter never logs request/response bodies or the PAT.
+· Tag: [Scaffold or stub], depends on Task 5 for the PR shape.
+
+17. Implement rate-limit and upstream error mapping
+
+· Files: RateLimitHandler.kt and UpstreamErrorMapper.kt (both scaffold-only).
+· Deliverable: map 403/429 with rate-limit headers to a typed retryable error with backoff bounded per the decision in Task 3; map 409/422 to conflict; map everything unmapped to a non-retryable upstream error.
+· Acceptance: 429 with Retry-After produces the documented backoff; conflict on write_file returns the typed conflict error and does not auto-retry.
+· Tag: [Scaffold or stub] + [Open decision] on the backoff bounds.
+
+---
+
+Phase D — Local transport (bridge/local, bridge/app)
+
+18. Add the HTTP server dependency and implement LocalServer
+
+· Files: bridge/local/build.gradle.kts (add Ktor server), LocalServer.kt.
+· Deliverable: bind to 127.0.0.1:18765 (configurable); bind ::1 per the PR #8 resolution from Task 2; refuse to start on non-loopback interfaces.
+· Acceptance: server starts only on loopback; a request to a non-loopback address is refused at the OS level.
+· Tag: [Scaffold or stub], depends on Task 2.
+
+19. Implement local authentication
+
+· File: LocalAuthPlugin.kt.
+· Deliverable: verify the local-client bearer token (43 chars) from the Authorization header only; reject tokens in query strings, logs, or argv (RTB-22, RTB-23); the credential is independent of relay-device and GitHub PAT (RTB-04).
+· Acceptance: missing/malformed token → 401; token in query string → 400; token never appears in any log sink.
+· Tag: [Scaffold or stub].
+
+20. Implement route handling
+
+· File: ToolRoute.kt.
+· Deliverable: POST /api/v1/tools/{operation} matching the OpenAPI contract; the path operation must equal the envelope’s operation; only the six canonical operations are routable.
+· Acceptance: unknown operation → 404; path/envelope mismatch → 400; all six routes dispatch to BridgeService.
+· Tag: [Scaffold or stub].
+
+21. Implement the local envelope mapper
+
+· File: LocalEnvelopeMapper.kt.
+· Deliverable: HTTP + JSON → canonical RequestEnvelope (RFC 3339 → epoch millis) and ResponseEnvelope → HTTP; reject unknown fields; enforce the 2097152-byte request cap before JSON parsing.
+· Acceptance: oversize body → typed error before parse; SUCCEEDED with error present → rejected by the response serializer.
+· Tag: [Scaffold or stub].
+
+---
+
+Phase E — Relay path (bridge/relay)
+
+22. Add the WebSocket dependency and implement the relay client
+
+· Files: bridge/relay/build.gradle.kts (add OkHttp/WebSocket), RelayClient.kt, RelayConnectionManager.kt, RelayConfig.kt.
+· Deliverable: outbound WSS connection authenticated with the relay-device credential; no inbound listener; reconnect with backoff.
+· Acceptance: only relay-device credential is used on the upgrade; local-client and GitHub PAT are never attached to relay frames.
+· Tag: [Scaffold or stub].
+
+23. Implement relay envelope mapping
+
+· File: RelayEnvelopeMapper.kt.
+· Deliverable: relay frame (type=request) → canonical RequestEnvelope; canonical ResponseEnvelope → relay frame (type=response) with matching correlation_id.
+· Acceptance: round-trip test for all four operations; malformed relay frames rejected without reaching BridgeService.
+· Tag: [Scaffold or stub].
+
+24. Implement principal assertion mapping
+
+· File: RelayPrincipalMapper.kt.
+· Deliverable: principal_assertion → canonical Principal; the assertion is input only — it never grants authorization (phone re-runs Task 7).
+· Acceptance: an assertion claiming a repo outside the allow-list still results in POLICY_DENIED.
+· Tag: [Scaffold or stub].
+
+25. Implement the replay guard
+
+· File: ReplayGuard.kt.
+· Deliverable: monotonic seq per device session; reject duplicate or out-of-window seq; enforce expires_at (RTB-47 — no execution after reconnect).
+· Acceptance: duplicate seq → dropped with a typed error; expired request after reconnect → EXPIRED, no GitHub call.
+· Tag: [Scaffold or stub].
+
+---
+
+Phase F — Wiring and end-to-end verification
+
+26. Wire the pipeline in the app module
+
+· Files: bridge/app/ — the dependency-injection setup and BridgeService construction.
+· Deliverable: both transports (Tasks 18–21, 22–25) construct the same BridgeService with the same PolicyEngine, PathNormalizer, ProtectedPaths, BranchRules, RepositoryAllowList, ApprovalCoordinator, GitHubAdapter, OutcomeReconciler, DuplicateDetector, WriteCoordinator.
+· Acceptance: a single test asserts both transports invoke the identical policy graph.
+· Tag: [Scaffold or stub].
+
+27. Verify the audit sink emits no forbidden data
+
+· File: the AuditSink implementation (locate first; not in the gap table, so its status must be confirmed).
+· Deliverable: every AuditEvent validates against the schema (additionalProperties: false); add an assertion that content, PATs, local-client tokens, and full request/response bodies cannot be added.
+· Acceptance: a test that attempts to attach content fails schema validation; a log-capture test confirms WriteFileArgs.toString() masks content in the pipeline.
+· Tag: [Scaffold or stub] / verification.
+
+28. End-to-end test for path A (local loopback)
+
+· Files: new test under bridge/app/src/test/... (e.g. LocalPathE2ETest.kt).
+· Deliverable: run the four-operation sample task (read_file → create_branch → write_file → create_pull_request) against a mocked GitHub REST server, with example-org/sandbox approved.
+· Acceptance: all four reach SUCCEEDED (PR step via approval); audit records written for each; no content, token, or body appears in logs.
+· Tag: [Scaffold or stub].
+
+29. End-to-end test for path B (relay)
+
+· Files: new test under bridge/app/src/test/... (e.g. RelayPathE2ETest.kt) plus a fake relay harness.
+· Deliverable: same four-operation task over a simulated relay connection; assert the phone re-validates and re-authorizes even when the relay assertion claims broader scopes.
+· Acceptance: an assertion claiming an unapproved repo → POLICY_DENIED; duplicate seq dropped; expired frame after reconnect → EXPIRED; lost ack on write_file → OUTCOME_UNKNOWN → RECONCILING → SUCCEEDED.
+· Tag: [Scaffold or stub].
+
+---
+
+Sequencing notes
+
+· Hard dependency chain: 1 → 8; 2 → 18, 11; 3 → 14, 17; 5 → 16; 6 → everything in Phases B–E that calls submit.
+· Safe to parallelize: Phase C (16–17) with Phase D (18–21) and Phase E (22–25), once Phase A and Task 6 are done.
+· Tasks 1–5 have no code dependencies and can be started immediately, but Tasks 8, 11, 14, 16, 17 are blocked until their corresponding decision lands. Do not start those code tasks on a guessed decision.

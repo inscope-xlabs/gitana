@@ -1,0 +1,153 @@
+**Ordered task list for the AI agent**
+
+Each task has explicit deliverables and the primary files that must be completed or created. Work strictly inside `inscope-xlabs/gitana`. Do not invent behaviour beyond the v2 specification, schemas, and exit-tasks document.
+
+1. **Close the Local Transport Contract and reconcile Appendix A**  
+   Deliverables:  
+   - Final decision recorded (sync 200 vs 202 Accepted + poll) and reflected in schemas/OpenAPI.  
+   - Appendix A no longer marked “illustrative”; it matches the machine-readable schemas.  
+   - Full error-code catalog mapped to `category`, `http_status`, `retryable`, `execution_state`.  
+   Files:  
+   - `docs/remote_repository_tool_bridge_v2_specification.md` (Appendix A, §8, §11.1, exit-tasks checkboxes)  
+   - `bridge/contracts/src/main/resources/schemas/local-transport.v1.json`  
+   - `bridge/contracts/src/main/resources/schemas/error.v1.json`  
+   - `bridge/contracts/src/main/resources/openapi/bridge.v1.yaml`  
+   - `bridge/contracts/SCHEMAS.md`
+
+2. **Complete the Relay Transport Contract**  
+   Deliverables:  
+   - Device identity, session binding, sequence/correlation, expiry, replay detection, acknowledgements, and principal-assertion format fully specified and schema’d.  
+   - Trusted-relay profile behaviour explicit; E2E profile left deferred.  
+   Files:  
+   - `docs/cloudflare_relay_specification.md`  
+   - `docs/remote_repository_tool_bridge_v2_specification.md` (§4.3, §5.2)  
+   - `bridge/contracts/src/main/resources/schemas/relay-envelope.v1.json`  
+   - `bridge/contracts/SCHEMAS.md`  
+   - `docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md` (mark Relay Transport items done)
+
+3. **Specify path canonicalization, default protected lists, and create_pull_request rules**  
+   Deliverables:  
+   - Normative RTB-49 algorithm fully operationalised (dot segments, encodings, Unicode, root containment).  
+   - Default protected-branch and protected-path lists.  
+   - `create_pull_request` head owner/branch syntax and existing-PR detection rules.  
+   Files:  
+   - `docs/remote_repository_tool_bridge_v2_specification.md` (§7.1, §7.2)  
+   - `bridge/core/src/main/kotlin/.../policy/PathNormalizer.kt` (complete implementation)  
+   - `bridge/core/src/main/kotlin/.../policy/ProtectedPaths.kt`  
+   - `bridge/core/src/main/kotlin/.../policy/BranchRules.kt`  
+   - `bridge/core/src/test/kotlin/.../policy/PathNormalizerTest.kt` (expand coverage)  
+   - `docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md` (§3 items)
+
+4. **Implement the PolicyEngine (stop failing closed)**  
+   Deliverables:  
+   - Real evaluation: repository allow-list → path normalisation → protected paths/branches → operation permissions → confirmation requirement.  
+   - Returns structured `PolicyDecision` (Allow / Deny with reason / RequiresApproval).  
+   Files:  
+   - `bridge/core/src/main/kotlin/.../policy/PolicyEngine.kt`  
+   - `bridge/core/src/main/kotlin/.../policy/RepositoryAllowList.kt`  
+   - `bridge/core/src/main/kotlin/.../policy/PolicyConfig.kt`  
+   - `bridge/core/src/test/kotlin/.../policy/PolicyEngineTest.kt`
+
+5. **Wire the RequestPipeline and complete lifecycle transitions**  
+   Deliverables:  
+   - Ordered pipeline: validate envelope → expire check → path canonicalise → PolicyEngine → ApprovalGate (if needed) → GitHub dispatch → audit → terminal state.  
+   - Correct transitions into `OUTCOME_UNKNOWN`, `RECONCILING`, `MANUAL_REVIEW`.  
+   - Duplicate detection and outcome reconciliation stubs replaced with working logic.  
+   Files:  
+   - `bridge/core/src/main/kotlin/.../application/RequestPipeline.kt`  
+   - `bridge/core/src/main/kotlin/.../application/RequestLifecycle.kt` (if extensions needed)  
+   - `bridge/core/src/main/kotlin/.../application/DuplicateDetector.kt`  
+   - `bridge/core/src/main/kotlin/.../application/OutcomeReconciler.kt`  
+   - `bridge/core/src/main/kotlin/.../application/WriteCoordinator.kt`  
+   - `bridge/core/src/main/kotlin/.../application/BridgeService.kt`
+
+6. **Implement all six GitHub operations**  
+   Deliverables:  
+   - Working REST mappings for `read_file`, `create_branch`, `write_file`, `delete_file`, `list_branches`, `create_pull_request`.  
+   - Internal SHA resolution, conflict handling (409), rate-limit/Retry-After backoff, Base64 correctness, empty-repo edge cases.  
+   Files:  
+   - `bridge/github/src/main/kotlin/.../ops/ReadFile.kt`  
+   - `bridge/github/src/main/kotlin/.../ops/WriteFile.kt`  
+   - `bridge/github/src/main/kotlin/.../ops/CreateBranch.kt`  
+   - `bridge/github/src/main/kotlin/.../ops/DeleteFile.kt`  
+   - `bridge/github/src/main/kotlin/.../ops/ListBranches.kt`  
+   - `bridge/github/src/main/kotlin/.../ops/CreatePullRequest.kt`  
+   - supporting client helpers under `bridge/github/src/main/kotlin/.../client/`
+
+7. **Implement the local loopback HTTP adapter**  
+   Deliverables:  
+   - Ktor server bound only to `127.0.0.1` (and `::1` when available).  
+   - Routes: health, capabilities, `POST /api/v1/tools/{operation}`, request status, cancel.  
+   - Local-client bearer authentication on every non-health request.  
+   - Host-header guard, size/timeout/rate limits from Appendix D.  
+   Files:  
+   - `bridge/local/src/main/kotlin/.../LocalServer.kt`  
+   - `bridge/local/src/main/kotlin/.../LocalAuthPlugin.kt`  
+   - `bridge/local/src/main/kotlin/.../HostHeaderGuard.kt`  
+   - `bridge/local/src/main/kotlin/.../LoopbackBinding.kt`  
+   - `bridge/local/src/main/kotlin/.../limits/LocalLimits.kt`  
+   - `bridge/local/src/main/kotlin/.../mapping/LocalEnvelopeMapper.kt`  
+   - `bridge/local/src/main/kotlin/.../routes/ToolRoute.kt`  
+   - `bridge/local/src/main/kotlin/.../routes/HealthRoute.kt`  
+   - `bridge/local/src/main/kotlin/.../routes/CapabilitiesRoute.kt`  
+   - `bridge/local/src/main/kotlin/.../routes/RequestStatusRoute.kt`  
+   - `bridge/local/src/test/kotlin/.../LoopbackBindingTest.kt` (and new route/auth tests)
+
+8. **Implement the relay adapter (trusted-relay profile)**  
+   Deliverables:  
+   - Outbound WSS client, connection manager, envelope mapping, principal mapping, replay/sequence/expiry guard.  
+   - Phone re-validates every request; relay never trusted for policy.  
+   - Relay failure must not affect localhost operation.  
+   Files:  
+   - `bridge/relay/src/main/kotlin/.../RelayClient.kt`  
+   - `bridge/relay/src/main/kotlin/.../RelayConnectionManager.kt`  
+   - `bridge/relay/src/main/kotlin/.../RelayEnvelopeMapper.kt`  
+   - `bridge/relay/src/main/kotlin/.../RelayPrincipalMapper.kt`  
+   - `bridge/relay/src/main/kotlin/.../ReplayGuard.kt`  
+   - `bridge/relay/src/main/kotlin/.../FrameLimits.kt`  
+   - `bridge/relay/src/main/kotlin/.../RelayConfig.kt`
+
+9. **Wire approval, audit emission, and resource limits end-to-end**  
+   Deliverables:  
+   - ApprovalGate implementation used by the pipeline for `write_file`/`create_branch` (policy), `delete_file`, `create_pull_request`.  
+   - Audit events written on every accepted request (metadata only).  
+   - ResourceLimits enforced from Appendix D values.  
+   Files:  
+   - `bridge/core/src/main/kotlin/.../approval/ApprovalGate.kt` (interface already present)  
+   - `bridge/app/src/main/kotlin/.../approval/ApprovalCoordinator.kt`  
+   - `bridge/app/src/main/kotlin/.../approval/ApprovalNotificationReceiver.kt`  
+   - `bridge/core/src/main/kotlin/.../limits/ResourceLimits.kt`  
+   - `bridge/storage/src/main/kotlin/.../audit/RoomAuditSink.kt` (and DAO/entity if needed)  
+   - `bridge/core/src/main/kotlin/.../ports/AuditSinkPort.kt`
+
+10. **Resolve documented inconsistencies**  
+    Deliverables:  
+    - Lifecycle naming reconciled between §4.3 prose and `RequestState` enum (or explicit mapping table).  
+    - Navigation Transport clearly scoped as a separate plane; sample Tool Bridge task does not inherit its session-triple rules.  
+    - Status header / §15 wording cleaned.  
+    Files:  
+    - `docs/remote_repository_tool_bridge_v2_specification.md`  
+    - `docs/navigation_transport_specification.md` (cross-reference only)  
+    - `docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md`  
+    - `bridge/contracts/src/main/kotlin/.../lifecycle/RequestState.kt` (comments / transitions if adjusted)
+
+11. **Add focused integration tests that exercise the sample task**  
+    Deliverables:  
+    - Automated tests (unit + instrumented where required) that drive the four operations of the sample task on both local and relay paths (relay may be mocked).  
+    - Coverage of the five failure paths listed in the walkthrough.  
+    Files (create as needed under existing test source sets):  
+    - `bridge/core/src/test/.../application/RequestPipelineTest.kt`  
+    - `bridge/local/src/test/.../ToolRouteIntegrationTest.kt`  
+    - `bridge/github/src/test/.../ops/*Test.kt`  
+    - `bridge/relay/src/test/.../RelayAdapterTest.kt`  
+    - `bridge/app/src/androidTest/...` (if device-level checks are required)
+
+12. **Update exit-tasks and mark the sample task runnable**  
+    Deliverables:  
+    - All exit-tasks items that the above work closes are checked off.  
+    - Short note in the exit-tasks or README stating that the sample task (`example-org/sandbox` four-step flow) is now executable on Path A and Path B once a device is provisioned.  
+    Files:  
+    - `docs/remote_repository_tool_bridge_v2_draft_exit_tasks.md`  
+    - `bridge/README.md` (or root README if that is the operator entry point)
+
+Execute the tasks in the order given. After each task, the corresponding deficiency from the gap table must be eliminated or reduced to pure device-validation work that cannot be completed in pure code.
