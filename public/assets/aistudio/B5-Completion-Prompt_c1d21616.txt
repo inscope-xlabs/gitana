@@ -1,0 +1,217 @@
+# Task: Retarget B1 policy stubs and extend B4 PolicyConfig for B5
+
+You are editing an existing Kotlin Multiplatform / Android bridge project located at:
+
+    https://github.com/inscope-xlabs/gitana
+
+You must follow the project's Coding Standards (Standard 1 – Functional
+Correctness):
+
+    https://github.com/inscope-xlabs/gitana/blob/main/docs/Coding%20Standards.md
+
+Task B5 has just landed a real `PolicyEngine` and `ConfirmationRules` in the
+package:
+
+    com.inscopexlabs.gitana.gitbridge.core.policy
+
+This requires small, surgical edits to two previously generated files so the
+whole core module compiles and all Standard 1 stages still hold:
+
+1. **B1** – `BridgeService.kt` / `RequestPipeline.kt`
+2. **B4** – `PolicyConfig.kt`
+
+Make **only** the edits listed below. Do **not** rename, restructure, or
+reformat any other file. Do **not** touch `ApprovalGate`, `ApprovalResult`,
+`GitHubAdapter`, or `AuditSink` – they remain stubs for later tasks (B6, C1).
+
+---
+
+## File 1 — `bridge/core/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/core/application/BridgeService.kt`
+
+### 1a. Delete the placeholder declarations
+Near the bottom of the file there is a block of placeholder interfaces and
+data classes. **Delete only these two declarations**:
+
+```kotlin
+interface PolicyEngine {
+    suspend fun evaluate(request: ToolRequest, canonicalPath: String?): PolicyDecision
+}
+
+data class PolicyDecision(
+    val allowed: Boolean,
+    val requiresApproval: Boolean = false,
+    val reason: String = "",
+    val errorCode: ErrorCode = ErrorCode.POLICY_VIOLATION,
+)
+```
+
+**Keep** `ApprovalGate`, `ApprovalResult`, `GitHubAdapter`, and `AuditSink`
+exactly where they are. Their header comment ("Placeholder interfaces – they
+will be replaced by real implementations in tasks B5, B6, C1, and storage
+respectively.") must be updated so it no longer mentions B5:
+
+```kotlin
+// Placeholder interfaces – they will be replaced by real implementations
+// in tasks B6, C1, and storage respectively.
+```
+
+### 1b. Add the imports
+At the top of the file, alongside the existing `com.inscopexlabs.gitana.gitbridge.contracts.*`
+import, add:
+
+```kotlin
+import com.inscopexlabs.gitana.gitbridge.core.policy.PolicyDecision
+import com.inscopexlabs.gitana.gitbridge.core.policy.PolicyEngine
+```
+
+### 1c. No other behavioural change
+`BridgeService.submit` / `getStatus` remain identical. `PolicyEngine` is still
+injected via the constructor of `RequestPipeline` (which `BridgeService` holds).
+The public surface of `BridgeService` must not change.
+
+---
+
+## File 2 — `bridge/core/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/core/application/RequestPipeline.kt`
+
+### 2a. Add the imports
+At the top, add:
+
+```kotlin
+import com.inscopexlabs.gitana.gitbridge.core.policy.PolicyDecision
+import com.inscopexlabs.gitana.gitbridge.core.policy.PolicyEngine
+```
+
+### 2b. Do not move or rename anything else
+The `RequestPipeline` class, its `PipelineResult` sealed type, and every step
+of `execute(...)` remain unchanged. The type signatures of `policyEngine` and
+`policyDecision` are identical, so no logic changes are needed — only the
+imports.
+
+---
+
+## File 3 — `bridge/core/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/core/policy/PolicyConfig.kt`
+
+### 3a. Add the new field
+Insert `confirmationRules: ConfirmationRules` **between** `branchRules` and
+`resourceLimits` in the `PolicyConfig` data class:
+
+```kotlin
+data class PolicyConfig(
+    val version: Long,
+    val repositoryAllowList: RepositoryAllowList,
+    val protectedPaths: ProtectedPaths,
+    val branchRules: BranchRules,
+    val confirmationRules: ConfirmationRules,   // ← NEW
+    val resourceLimits: ResourceLimits,
+    val updatedAt: Instant = Instant.EPOCH,
+) {
+    init { require(version >= 0) { "version must be >= 0, was $version" } }
+    // ...withChanges and companion below
+}
+```
+
+`ConfirmationRules` lives in the same package (`core.policy`), so **no new
+import is required** inside `PolicyConfig.kt`.
+
+### 3b. Extend `withChanges`
+Add the parameter with a default and thread it into the `copy(...)` call, in
+the same position as in the data class:
+
+```kotlin
+fun withChanges(
+    repositoryAllowList: RepositoryAllowList = this.repositoryAllowList,
+    protectedPaths: ProtectedPaths = this.protectedPaths,
+    branchRules: BranchRules = this.branchRules,
+    confirmationRules: ConfirmationRules = this.confirmationRules,   // ← NEW
+    resourceLimits: ResourceLimits = this.resourceLimits,
+    now: Instant = Instant.now(),
+): PolicyConfig = copy(
+    version = version + 1,
+    repositoryAllowList = repositoryAllowList,
+    protectedPaths = protectedPaths,
+    branchRules = branchRules,
+    confirmationRules = confirmationRules,                          // ← NEW
+    resourceLimits = resourceLimits,
+    updatedAt = now,
+)
+```
+
+### 3c. Extend `default()`
+Update the companion factory so every call site keeps working and the first‑run
+config is fail‑closed by default:
+
+```kotlin
+fun default(now: Instant = Instant.now()): PolicyConfig = PolicyConfig(
+    version = 0,
+    repositoryAllowList = RepositoryAllowList.EMPTY,
+    protectedPaths = ProtectedPaths(),
+    branchRules = BranchRules(),
+    confirmationRules = ConfirmationRules(),                        // ← NEW
+    resourceLimits = ResourceLimits.DEFAULT,
+    updatedAt = now,
+)
+```
+
+### 3d. No other changes
+`PolicyConfigLoadResult` and `PolicyConfigSource` are unchanged. Serialization
+of the new field happens automatically because `PolicyConfig` is a `data class`;
+no `PolicyDataStore` (B11) change is required. `ResourceLimits` stays as the
+local placeholder in `PolicyConfig.kt` until task B10 moves it out.
+
+---
+
+## Guardrails — do not
+
+- Do **not** rename files, packages, or classes.
+- Do **not** touch `ApprovalGate`, `ApprovalResult`, `GitHubAdapter`,
+  `AuditSink`, `RequestRecord`, or `RequestLifecycle`.
+- Do **not** modify `ProtectedPaths.kt`, `BranchRules.kt`,
+  `RepositoryAllowList.kt`, `PathNormalizer.kt`, `ConfirmationRules.kt`, or
+  `PolicyEngine.kt` — those are owned by B2, B3, B4 (allow‑list only), and B5
+  and are already final.
+- Do **not** introduce `TODO()` in any reachable code path — Standard 1
+  Stage 3 forbids it.
+- Do **not** change `PolicyEngine.evaluate`'s signature or `PolicyDecision`'s
+  field names — B1 depends on them exactly as B5 defines them:
+    - `suspend fun evaluate(request: ToolRequest, canonicalPath: String?): PolicyDecision`
+    - `PolicyDecision(allowed, requiresApproval, reason, errorCode)`
+- Do **not** change the ordering of the pipeline steps in `RequestPipeline`:
+    `validate → expiry → canonicalize → PolicyEngine → ApprovalGate → dispatch → audit → terminal`.
+- Do **not** add logging, comments beyond the ones specified, or reformat
+  unrelated code.
+
+---
+
+## Validation — the agent must run and confirm
+
+After the edits, run the following and confirm every item passes:
+
+1. **Compile** the core module:
+   `./gradlew :bridge:core:compileKotlin` (or the multiplatform equivalent
+   configured in the project) must succeed with zero errors.
+2. **Unit tests** for the affected packages:
+   `./gradlew :bridge:core:test` must run `PathNormalizerTest` and
+   `PolicyEngineTest` with all tests green.
+3. **Search checks** (should return zero hits):
+   - `rg -n "interface PolicyEngine" bridge/core/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/core/application/`
+     → no matches (the stub is gone).
+   - `rg -n "data class PolicyDecision" bridge/core/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/core/application/`
+     → no matches.
+   - `rg -n "confirmationRules" bridge/core/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/core/policy/PolicyConfig.kt`
+     → exactly three matches (field, `withChanges` param, `copy(...)` line).
+   - `rg -n "confirmationRules = ConfirmationRules\\(\\)" bridge/core/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/core/policy/PolicyConfig.kt`
+     → exactly one match (in `default()`).
+4. **Import sanity**:
+   - `BridgeService.kt` imports `PolicyEngine` and `PolicyDecision` from
+     `com.inscopexlabs.gitana.gitbridge.core.policy`.
+   - `RequestPipeline.kt` imports the same two types from the same package.
+   - Neither file declares a local `PolicyEngine` or `PolicyDecision`.
+
+Report back:
+- the final diff of each touched file,
+- the compile + test output,
+- the results of each search check above.
+
+If any test fails or any search check returns an unexpected result, **stop and
+report the failure** rather than attempting a workaround. The goal is a clean,
+minimal change that preserves Standard 1 compliance across B1, B4, and B5.

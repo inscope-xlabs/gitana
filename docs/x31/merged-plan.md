@@ -104,27 +104,25 @@ exit-tasks checkboxes updated together.
 
 ## Phase B: Core (`bridge/core`, plus storage)
 
-**B1. Request pipeline** (6a#5, 6b#6). `core:application/BridgeService.kt` `submit` and `status` (both `TODO`),
-`RequestPipeline.kt`, `RequestLifecycle.kt`.
+> **Pre-Scaffold Status (B1–B5):** Stages **B1 through B5** already have pre-implementation scaffold files in place that are **Standard 1 compliant** (Stages 1–3 of [`docs/Coding Standards.md`](../Coding%20Standards.md)) and wired to `:bridge:contracts` (`BridgeService.kt`, `RequestPipeline.kt`, `RequestLifecycle.kt`, `PathNormalizer.kt`, `PathNormalizerTest.kt`, `ProtectedPaths.kt`, `BranchRules.kt`, `RepositoryAllowList.kt`, `PolicyConfig.kt`, `ConfirmationRules.kt`, `PolicyEngine.kt`, `PolicyEngineTest.kt`). Upcoming Phase B execution completes spec-level acceptance parity (including RTB-49 vector alignment and `PolicyEngineTest`/`ConfirmationRules` reconciliation) and advances code into Standard 2/3.
+
+**B1. Request pipeline** (6a#5, 6b#6). `core:application/BridgeService.kt`, `RequestPipeline.kt`, `RequestLifecycle.kt` *(Standard 1 pre-scaffold in place — `BridgeService.submit`/`getStatus`, `RequestPipeline.execute`, `RequestLifecycle`, with B6/C1/storage placeholders remaining in `RequestPipeline.kt`)*.
 Order: validate envelope, expiry check, path canonicalize, `PolicyEngine`, `ApprovalGate` if required, GitHub
 dispatch, audit, terminal state. Edges must match `RequestState.kt` and `lifecycle.v1.json` after A3.
 Acceptance: unit tests for each edge, including lost acknowledgement to `OUTCOME_UNKNOWN`.
 
-**B2. Path normalizer** (6a#3, 6b#8) `core:policy/PathNormalizer.kt`. Implements A1. Acceptance: every vector passes;
-`normalize` rejects only vectors marked reject; remove the six `@Ignore` markers in `PathNormalizerTest.kt` and
-expand it from the vector file.
+**B2. Path normalizer** (6a#3, 6b#8) `core:policy/PathNormalizer.kt`, `PathNormalizerTest.kt` *(Standard 1 pre-scaffold in place)*. Align fully with A1 (`RTB-49` 8-step rules and `path-normalization-test-vectors.v1.json`). Acceptance: every vector passes;
+`normalize` rejects only vectors marked reject; verify `PathNormalizerTest.kt` covers all vectors in the vector file.
 
-**B3. Protected paths and branch rules** (6b#9, 6b#10) `ProtectedPaths.kt` (currently protects everything),
-`BranchRules.kt` (currently writes nothing). Use B2 and A6. Acceptance: `docs/hello.md` is not protected;
-`.github/workflows/*` is; `docs/hello` is writable; `main` is not (denied before any GitHub call).
+**B3. Protected paths and branch rules** (6b#9, 6b#10) `ProtectedPaths.kt`, `BranchRules.kt` *(Standard 1 pre-scaffolds in place with glob matching and defaults)*. Use B2 and A6. Acceptance: `docs/hello.md` is not protected;
+`.github/workflows/*` is; `docs/hello` is writable; `main` is not (denied/gated before any GitHub call).
 
-**B4. Allow-list and policy config** (6b#11) `RepositoryAllowList.kt`, `PolicyConfig.kt`. Implements the A6 decision.
+**B4. Allow-list and policy config** (6b#11) `RepositoryAllowList.kt`, `PolicyConfig.kt` *(Standard 1 pre-scaffolds in place, including `confirmationRules` and fail-closed `PolicyConfig.default()`)*. Align with the A6 canonicalization decision.
 Acceptance: `Example-Org/Sandbox` and `example-org/sandbox` behave consistently.
 
-**B5. Policy engine and confirmation rules** (6a#4, 6b#7) `PolicyEngine.kt` (currently denies everything),
-`ConfirmationRules.kt`. Order: allow-list, path normalization, protected branch, protected path, operation
+**B5. Policy engine and confirmation rules** (6a#4, 6b#7) `PolicyEngine.kt`, `ConfirmationRules.kt`, `PolicyEngineTest.kt` *(Standard 1 pre-scaffolds in place and wired into `RequestPipeline.kt` and `BridgeGraph.kt`)*. Order: allow-list, path normalization, protected branch, protected path, operation
 permission, confirmation. Returns `Allow`, `Deny(code, reason)` or `RequireApproval`; unknown input denies.
-Acceptance: `PolicyEngineTest.kt` covers the allow case and each single failure with its typed deny.
+Acceptance: reconcile `ConfirmationRules` operation names with `ToolOperation` wire names, enable the remaining `PolicyEngineTest.kt` cases, and pass all allow and typed-deny cases.
 
 **B6. Approval gating** (6a#9, 6b#12) `core:approval/ApprovalGate.kt`, `app:approval/ApprovalCoordinator.kt`,
 `ApprovalNotificationReceiver.kt`. Suspend to `AWAITING_APPROVAL`; approve to `EXECUTING`; decline to `REJECTED`

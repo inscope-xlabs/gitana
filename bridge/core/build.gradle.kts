@@ -12,5 +12,6 @@ kotlin { compilerOptions { jvmTarget = JvmTarget.JVM_11 } }
 
 dependencies {
     implementation(project(":bridge:contracts"))
+    implementation(libs.kotlinx.coroutines.core)
   testImplementation(libs.junit)
 }
