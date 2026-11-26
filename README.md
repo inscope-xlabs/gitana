@@ -4,7 +4,7 @@
 
 Gitana is not tied to any AI model, agent, relay, chat interface, or software-development workflow. It is defined by the work unit it manages: a repository-associated task with an explicit specification, controlled execution, artifacts, verification, and an inspectable outcome.
 
-Full specification: [Gitana_Product_Capability_Specification_v0.1.md](./Gitana_Product_Capability_Specification_v0.1.md)
+Full specification: [Gitana_Product_Capability_Specification_v0.1.md](./Gitana_Product_Capability_Specification_v0.1.md) · Modular component docs: [pcsd/README.md](./pcsd/README.md)
 
 ## Product promise
 
