@@ -1,0 +1,64 @@
+name: Android debug APK
+
+# Builds the bridge debug APK without the Gradle wrapper. The only action used is
+# actions/checkout; Java and the Android SDK come preinstalled on the runner, and Gradle is
+# downloaded at the version pinned in gradle/wrapper/gradle-wrapper.properties.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-debug-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk-debug:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select JDK 17
+        run: |
+          set -euo pipefail
+          test -d "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+
+      - name: Install Gradle (version pinned in gradle-wrapper.properties)
+        run: |
+          set -euo pipefail
+          version="$(sed -nE 's#^distributionUrl=.*/gradle-([0-9][0-9.]*)-bin\.zip$#\1#p' gradle/wrapper/gradle-wrapper.properties)"
+          test -n "$version"
+          base="https://services.gradle.org/distributions/gradle-${version}-bin.zip"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/gradle.zip" "$base"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/gradle.zip.sha256" "${base}.sha256"
+          echo "$(tr -d '[:space:]' < "$RUNNER_TEMP/gradle.zip.sha256")  $RUNNER_TEMP/gradle.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-${version}/bin" >> "$GITHUB_PATH"
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Show toolchain
+        run: |
+          java -version
+          gradle --version
+
+      - name: Build debug APK
+        run: gradle :bridge:app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(bridge/app/build/outputs/apk/debug/*.apk)
+          test "${#apks[@]}" -ge 1
+          ls -l "${apks[@]}"
+          sha256sum "${apks[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
