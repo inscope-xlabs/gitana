@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_launcher_repo_clone"
+        android:drawable="@drawable/ic_launcher_gitana_bridge_1795680888700"
         android:gravity="center" />
 </layer-list>

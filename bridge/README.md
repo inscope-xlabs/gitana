@@ -18,13 +18,13 @@ Base package and application id: `com.inscopexlabs.gitana.gitbridge`
 | `:bridge:storage` | Android library | contracts, core | Audit/Diagnostics, request metadata |
 | `:bridge:local` | Android library | contracts, core | Localhost Adapter |
 | `:bridge:relay` | Android library | contracts, core | Relay Adapter (optional) |
-| `:bridge:app` | Android app | all of the above | Composition root, service, UI |
+| `:app` | Android app | all of the above | Composition root, service, UI |
 
 ## Dependency rules
 
 - `contracts` and `core` are pure Kotlin and must never import Android, Ktor, OkHttp, Cloudflare or agent SDK types.
 - Transport adapters (`local`, `relay`) depend on `core` but never on each other or on `github`.
-- `core` defines ports; adapters implement them; only `:bridge:app` wires concrete types together.
+- `core` defines ports; adapters implement them; only `:app` wires concrete types together.
 
 ## Scaffold state
 
