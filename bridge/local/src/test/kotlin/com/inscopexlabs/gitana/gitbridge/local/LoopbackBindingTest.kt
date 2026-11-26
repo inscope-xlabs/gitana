@@ -69,7 +69,7 @@ class LoopbackBindingTest {
         val server = ktorServer(port)
         try {
             server.start()
-            assertTrue(server.state.value is LocalServerState.Running)
+            assertTrue("${server.state.value}", server.state.value is LocalServerState.Running)
             val unknownRoute = exchange(port, "Host: 127.0.0.1:$port")
             assertTrue(unknownRoute, unknownRoute.startsWith("HTTP/1.1 404"))
             assertTrue(unknownRoute, "\"code\":\"NOT_FOUND\"" in unknownRoute)
