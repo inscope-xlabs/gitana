@@ -22,9 +22,8 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "RepoClone"
+rootProject.name = "gitana"
 
-include(":app")
 include(
   ":bridge:contracts",
   ":bridge:core",

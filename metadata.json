@@ -1,6 +1,0 @@
-{
-  "name": "RepoClone",
-  "description": "Clone any existing GitHub repository into a brand-new repository with a custom name.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
