@@ -1,6 +1,6 @@
 {
-  "name": "RepoClone",
-  "description": "Clone any existing GitHub repository into a brand-new repository with a custom name.",
+  "name": "Gitana Tool Bridge",
+  "description": "Android tool bridge for Gitana connecting local and relay agents to GitHub repositories.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

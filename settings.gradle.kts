@@ -22,7 +22,7 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "RepoClone"
+rootProject.name = "GitanaToolBridge"
 
 include(":app")
 include(
@@ -33,5 +33,4 @@ include(
   ":bridge:storage",
   ":bridge:local",
   ":bridge:relay",
-  ":bridge:app",
 )
