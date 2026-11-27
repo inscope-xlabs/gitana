@@ -84,6 +84,13 @@ class LoopbackBindingTest {
             val authorized = exchange(port, "Host: localhost", "Authorization: Bearer $TOKEN")
             assertTrue(authorized, authorized.startsWith("HTTP/1.1 404"))
             assertTrue(authorized, "\"code\":\"NOT_FOUND\"" in authorized)
+            val inQuery = exchange(port, "Host: localhost", target = "/unknown?access_token=$TOKEN")
+            assertTrue(inQuery, inQuery.startsWith("HTTP/1.1 400"))
+            assertFalse(inQuery, TOKEN in inQuery)
+            val health = exchange(port, "Host: localhost", target = "/api/v1/health")
+            // Exempt from authentication; the route itself arrives with D3.
+            assertTrue(health, health.startsWith("HTTP/1.1 404"))
+            assertTrue(unknownRoute, "WWW-Authenticate: Bearer" in unknownRoute)
             val badHost = exchange(port, "Host: example.org")
             assertTrue(badHost, badHost.startsWith("HTTP/1.1 403"))
             val tooLarge = exchange(port, "Host: localhost", "Content-Length: 2097153")
@@ -135,18 +142,18 @@ class LoopbackBindingTest {
         val principals = object : PrincipalResolverPort {
             override fun resolve(transport: TransportKind, subjectId: String) = Principal(subjectId, transport)
         }
-        return LocalServer(KtorListenerFactory(clock, LocalAuthPlugin(credentials, principals), {}), {}, port)
+        return LocalServer(KtorListenerFactory(clock, LocalAuthPlugin(credentials, principals, {}), {}), {}, port)
     }
 
     private fun freePort(): Int =
         ServerSocket(0, 1, InetAddress.getByName(LoopbackBinding.IPV4)).use { it.localPort }
 
-    private fun exchange(port: Int, vararg headers: String): String =
+    private fun exchange(port: Int, vararg headers: String, target: String = "/unknown"): String =
         Socket(LoopbackBinding.IPV4, port).use { socket ->
             socket.soTimeout = 5_000
             val head = headers.joinToString("") { "$it\r\n" }
             socket.getOutputStream().apply {
-                write("GET /unknown HTTP/1.1\r\n${head}Connection: close\r\n\r\n".toByteArray())
+                write("GET $target HTTP/1.1\r\n${head}Connection: close\r\n\r\n".toByteArray())
                 flush()
             }
             val reader = socket.getInputStream().bufferedReader()

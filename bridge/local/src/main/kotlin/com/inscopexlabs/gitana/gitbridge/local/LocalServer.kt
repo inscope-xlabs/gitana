@@ -27,7 +27,9 @@ import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.plugins.bodylimit.RequestBodyLimit
+import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.request.queryString
 import io.ktor.server.response.ApplicationSendPipeline
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
@@ -351,15 +353,22 @@ class KtorListenerFactory(
             }
         }
 
+        // After the D1 guards, so rejected credentials are still rate limited; before routing,
+        // so unknown routes also require a credential.
         val authentication = PipelinePhase("LocalAuth")
         insertPhaseAfter(ApplicationCallPipeline.Plugins, authentication)
         intercept(authentication) {
-            val header = call.request.headers[HttpHeaders.Authorization]
-            when (val result = auth.authenticate(call.request.path(), header)) {
+            val result = auth.authenticate(
+                method = call.request.httpMethod.value,
+                path = call.request.path(),
+                authorization = call.request.headers.getAll(HttpHeaders.Authorization).orEmpty(),
+                rawQuery = call.request.queryString(),
+            )
+            when (result) {
                 is LocalAuthResult.Authenticated -> call.attributes.put(localPrincipalKey, result.principal)
                 LocalAuthResult.Exempt -> Unit
-                LocalAuthResult.Rejected -> {
-                    call.respondText("", status = HttpStatusCode.Unauthorized)
+                is LocalAuthResult.Rejected -> {
+                    call.reject(result.error)
                     finish()
                 }
             }
@@ -396,6 +405,9 @@ class KtorListenerFactory(
         if (response.isCommitted || response.isSent) return
         try {
             retryAfterSeconds?.let { response.header(HttpHeaders.RetryAfter, it.toString()) }
+            if (error.httpStatus == HttpStatusCode.Unauthorized.value) {
+                response.header(HttpHeaders.WWWAuthenticate, "Bearer")
+            }
             respondText(
                 error.toTransportJson(),
                 ContentType.Application.Json,
@@ -425,6 +437,18 @@ internal object TransportErrors {
     val forbidden = error(
         ErrorCode.FORBIDDEN, ErrorCategory.AUTHORIZATION, 403, false,
         ExecutionState.NOT_STARTED, "Host or Origin is not permitted.",
+    )
+    val authFailed = error(
+        ErrorCode.AUTH_FAILED, ErrorCategory.AUTHENTICATION, 401, false,
+        ExecutionState.NOT_STARTED, "Missing or invalid local-client credential.",
+    )
+    val credentialInQuery = error(
+        ErrorCode.VALIDATION_FAILED, ErrorCategory.VALIDATION, 400, false,
+        ExecutionState.NOT_STARTED, "Credentials are not accepted in the query string.",
+    )
+    val malformedQuery = error(
+        ErrorCode.VALIDATION_FAILED, ErrorCategory.VALIDATION, 400, false,
+        ExecutionState.NOT_STARTED, "Query string is malformed.",
     )
     val malformedLength = error(
         ErrorCode.VALIDATION_FAILED, ErrorCategory.VALIDATION, 400, false,
