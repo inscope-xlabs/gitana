@@ -1,5 +1,6 @@
 package com.inscopexlabs.gitana.gitbridge.local
 
+import com.inscopexlabs.gitana.gitbridge.contracts.authz.Principal
 import com.inscopexlabs.gitana.gitbridge.contracts.error.BridgeError
 import com.inscopexlabs.gitana.gitbridge.contracts.error.ErrorCategory
 import com.inscopexlabs.gitana.gitbridge.contracts.error.ErrorCode
@@ -30,6 +31,7 @@ import io.ktor.server.request.path
 import io.ktor.server.response.ApplicationSendPipeline
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
+import io.ktor.util.AttributeKey
 import io.ktor.util.pipeline.PipelinePhase
 import java.net.BindException
 import kotlin.coroutines.cancellation.CancellationException
@@ -250,11 +252,11 @@ class LocalListenerStartException(cause: Throwable) : RuntimeException("Listener
  */
 class KtorListenerFactory(
     clock: ClockPort,
+    private val auth: LocalAuthPlugin,
     private val diagnostics: LocalDiagnostics,
     private val limits: LocalLimits = LocalLimits(),
 ) : LocalListenerFactory {
     private val guard = HostHeaderGuard()
-    private val auth = LocalAuthPlugin()
     private val rateLimiter = LocalRateLimiter(limits.rateLimitPerMinute, clock)
     private val inFlight = InFlightLimiter(limits.maxInFlight)
 
@@ -353,9 +355,13 @@ class KtorListenerFactory(
         insertPhaseAfter(ApplicationCallPipeline.Plugins, authentication)
         intercept(authentication) {
             val header = call.request.headers[HttpHeaders.Authorization]
-            if (!auth.isAuthorized(call.request.path(), header)) {
-                call.respondText("", status = HttpStatusCode.Unauthorized)
-                finish()
+            when (val result = auth.authenticate(call.request.path(), header)) {
+                is LocalAuthResult.Authenticated -> call.attributes.put(localPrincipalKey, result.principal)
+                LocalAuthResult.Exempt -> Unit
+                LocalAuthResult.Rejected -> {
+                    call.respondText("", status = HttpStatusCode.Unauthorized)
+                    finish()
+                }
             }
         }
 
@@ -410,6 +416,9 @@ class KtorListenerFactory(
         const val BUSY_RETRY_SECONDS = 1
     }
 }
+
+/** Holds the authenticated principal of a call, for the D3 routes. */
+internal val localPrincipalKey = AttributeKey<Principal>("gitbridge.local.principal")
 
 /** Pre-request errors, with the fields fixed by the `error.v1.json` catalogue. */
 internal object TransportErrors {

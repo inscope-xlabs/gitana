@@ -1,6 +1,11 @@
 package com.inscopexlabs.gitana.gitbridge.local
 
+import com.inscopexlabs.gitana.gitbridge.contracts.authz.Principal
+import com.inscopexlabs.gitana.gitbridge.contracts.authz.TransportKind
+import com.inscopexlabs.gitana.gitbridge.contracts.credential.CredentialClass
 import com.inscopexlabs.gitana.gitbridge.core.ports.ClockPort
+import com.inscopexlabs.gitana.gitbridge.core.ports.CredentialStorePort
+import com.inscopexlabs.gitana.gitbridge.core.ports.PrincipalResolverPort
 import java.net.BindException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -13,6 +18,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LoopbackBindingTest {
+    private companion object {
+        val TOKEN = "A".repeat(43)
+    }
+
     @Test
     fun allowsOnlyLoopback() {
         assertTrue(LoopbackBinding.isAllowed("127.0.0.1"))
@@ -72,6 +81,9 @@ class LoopbackBindingTest {
             assertTrue("${server.state.value}", server.state.value is LocalServerState.Running)
             val unknownRoute = exchange(port, "Host: 127.0.0.1:$port")
             assertTrue(unknownRoute, unknownRoute.startsWith("HTTP/1.1 401"))
+            val authorized = exchange(port, "Host: localhost", "Authorization: Bearer $TOKEN")
+            assertTrue(authorized, authorized.startsWith("HTTP/1.1 404"))
+            assertTrue(authorized, "\"code\":\"NOT_FOUND\"" in authorized)
             val badHost = exchange(port, "Host: example.org")
             assertTrue(badHost, badHost.startsWith("HTTP/1.1 403"))
             val tooLarge = exchange(port, "Host: localhost", "Content-Length: 2097153")
@@ -112,7 +124,18 @@ class LoopbackBindingTest {
         val clock = object : ClockPort {
             override fun nowMillis(): Long = System.currentTimeMillis()
         }
-        return LocalServer(KtorListenerFactory(clock, {}), {}, port)
+        val credentials = object : CredentialStorePort {
+            override fun <T> withGitHubToken(block: (CharArray) -> T): T = error("not used")
+
+            override fun verify(credentialClass: CredentialClass, presented: CharArray): Boolean =
+                credentialClass == CredentialClass.LOCAL_CLIENT && String(presented) == TOKEN
+
+            override fun revoke(credentialClass: CredentialClass) = Unit
+        }
+        val principals = object : PrincipalResolverPort {
+            override fun resolve(transport: TransportKind, subjectId: String) = Principal(subjectId, transport)
+        }
+        return LocalServer(KtorListenerFactory(clock, LocalAuthPlugin(credentials, principals), {}), {}, port)
     }
 
     private fun freePort(): Int =
