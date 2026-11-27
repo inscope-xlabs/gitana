@@ -15,5 +15,9 @@ android {
 dependencies {
   implementation(project(":bridge:contracts"))
   implementation(project(":bridge:core"))
+  api(libs.kotlinx.coroutines.core)
+  implementation(libs.ktor.server.core)
+  implementation(libs.ktor.server.cio)
+  implementation(libs.ktor.server.body.limit)
   testImplementation(libs.junit)
 }
