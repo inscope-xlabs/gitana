@@ -104,7 +104,7 @@ exit-tasks checkboxes updated together.
 
 ## Phase B: Core (`bridge/core`, plus storage)
 
-> **Pre-Scaffold Status (B1–B5):** Stages **B1 through B5** already have pre-implementation scaffold files in place that are **Standard 1 compliant** (Stages 1–3 of [`docs/Coding Standards.md`](../Coding%20Standards.md)) and wired to `:bridge:contracts` (`BridgeService.kt`, `RequestPipeline.kt`, `RequestLifecycle.kt`, `PathNormalizer.kt`, `PathNormalizerTest.kt`, `ProtectedPaths.kt`, `BranchRules.kt`, `RepositoryAllowList.kt`, `PolicyConfig.kt`, `ConfirmationRules.kt`, `PolicyEngine.kt`, `PolicyEngineTest.kt`). Upcoming Phase B execution completes spec-level acceptance parity (including RTB-49 vector alignment and `PolicyEngineTest`/`ConfirmationRules` reconciliation) and advances code into Standard 2/3.
+> **Pre-Scaffold Status (B1–B8):** Stages **B1 through B8** already have pre-implementation scaffold files in place that are **Standard 1 compliant** (Stages 1–3 of [`docs/Coding Standards.md`](../Coding%20Standards.md) for B1–B5, and Standard 1 pre-implementation scaffolds for B6–B8) wired to `:bridge:contracts` (`BridgeService.kt`, `RequestPipeline.kt`, `RequestLifecycle.kt`, `PathNormalizer.kt`, `PathNormalizerTest.kt`, `ProtectedPaths.kt`, `BranchRules.kt`, `RepositoryAllowList.kt`, `PolicyConfig.kt`, `ConfirmationRules.kt`, `PolicyEngine.kt`, `PolicyEngineTest.kt`, `ApprovalGate.kt`, `ApprovalCoordinator.kt`, `ApprovalNotificationReceiver.kt`, `WriteCoordinator.kt`, `WriteCoordinatorTest.kt`, `DuplicateDetector.kt`). Upcoming Phase B execution completes spec-level acceptance parity and remaining runtime integration (RTB-49 vector alignment, `PolicyEngineTest`/`ConfirmationRules` reconciliation, B6 Android notification/UI/timeout wiring, B7 pipeline acceptance, and B8 pipeline/service/B11 wiring plus owner decision for `retentionWindowMillis`) and advances code into Standard 2/3.
 
 **B1. Request pipeline** (6a#5, 6b#6). `core:application/BridgeService.kt`, `RequestPipeline.kt`, `RequestLifecycle.kt` *(Standard 1 pre-scaffold in place — `BridgeService.submit`/`getStatus`, `RequestPipeline.execute`, `RequestLifecycle`, with B6/C1/storage placeholders remaining in `RequestPipeline.kt`)*.
 Order: validate envelope, expiry check, path canonicalize, `PolicyEngine`, `ApprovalGate` if required, GitHub
@@ -125,14 +125,14 @@ permission, confirmation. Returns `Allow`, `Deny(code, reason)` or `RequireAppro
 Acceptance: reconcile `ConfirmationRules` operation names with `ToolOperation` wire names, enable the remaining `PolicyEngineTest.kt` cases, and pass all allow and typed-deny cases.
 
 **B6. Approval gating** (6a#9, 6b#12) `core:approval/ApprovalGate.kt`, `app:approval/ApprovalCoordinator.kt`,
-`ApprovalNotificationReceiver.kt`. Suspend to `AWAITING_APPROVAL`; approve to `EXECUTING`; decline to `REJECTED`
+`ApprovalNotificationReceiver.kt` *(Standard 1 pre-scaffolds in place and wired in `RequestPipeline.kt` and `BridgeGraph.kt`; Android notification/UI/timeout integration and B6 tests remain for B6 execution)*. Suspend to `AWAITING_APPROVAL`; approve to `EXECUTING`; decline to `REJECTED`
 with no GitHub call. Defaults: `delete_file` and `create_pull_request` require approval (DV-RTB-CONFIRM-*);
 `write_file` and `create_branch` follow policy.
 
-**B7. Write serialization** (6b#13) `WriteCoordinator.kt` (`TODO`). Per-repo, per-path serialization (RTB-48).
+**B7. Write serialization** (6b#13) `WriteCoordinator.kt`, `WriteCoordinatorTest.kt` *(Standard 1 pre-scaffolds in place — `InMemoryWriteCoordinator` wired into `RequestPipeline.kt` and `BridgeGraph.kt`, with `WriteCoordinatorTest.kt` passing)*. Per-repo, per-path serialization (RTB-48).
 Acceptance: a test asserts ordering of two concurrent writes.
 
-**B8. Duplicate detection** (6b#14) `DuplicateDetector.kt` (`fingerprint` is `TODO`). `request_id` plus operation
+**B8. Duplicate detection** (6b#14) `DuplicateDetector.kt` *(Standard 1 pre-scaffold in place — `DuplicateDetector`, `DuplicateRecordStore`, and `InMemoryDuplicateRecordStore`; `RequestPipeline`/`BridgeService`/B11 wiring, B8 tests, and owner decision for `retentionWindowMillis` remain for B8 execution)*. `request_id` plus operation
 fingerprint (RTB-45) within the window from A3. Acceptance: replay after `SUCCEEDED` returns the stored result with
 no second GitHub call.
 
