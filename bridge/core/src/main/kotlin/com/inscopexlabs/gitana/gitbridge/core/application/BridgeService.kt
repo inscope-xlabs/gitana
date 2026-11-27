@@ -47,18 +47,42 @@ class BridgeService(
             )
         }
 
-        // 2. Store the request in RECEIVED state
+        // 2. Reject duplicate request IDs without overwriting active/existing records
         val initialRecord = RequestRecord(
             requestId = request.requestId,
             state = RequestState.RECEIVED,
             createdAt = java.time.Instant.now(),
         )
-        mutex.withLock { store[request.requestId] = initialRecord }
+        val inserted = mutex.withLock {
+            if (store.containsKey(request.requestId)) {
+                false
+            } else {
+                store[request.requestId] = initialRecord
+                true
+            }
+        }
+        if (!inserted) {
+            return ResponseEnvelope(
+                requestId = request.requestId,
+                state = RequestState.REJECTED,
+                error = toBridgeError(
+                    code = ErrorCode.CONFLICT,
+                    message = "Duplicate requestId '${request.requestId}'",
+                    executionState = ExecutionState.NOT_STARTED,
+                ),
+            )
+        }
 
         // 3. Run the pipeline – every step is wrapped so that any exception
         //    becomes a user‑visible error (Stage 3).
         val pipelineResult = try {
-            pipeline.execute(request)
+            pipeline.execute(request) { nextState ->
+                mutex.withLock {
+                    store[request.requestId]?.let { current ->
+                        store[request.requestId] = current.copy(state = nextState)
+                    }
+                }
+            }
         } catch (e: Exception) {
             PipelineResult.Fail(
                 "Pipeline crashed: ${e.message ?: "unknown error"}",
@@ -132,6 +156,7 @@ class BridgeService(
         ErrorCode.POLICY_DENIED -> BridgeError(code, ErrorCategory.POLICY, 403, false, executionState, message)
         ErrorCode.APPROVAL_DECLINED -> BridgeError(code, ErrorCategory.AUTHORIZATION, 403, false, executionState, message)
         ErrorCode.EXPIRED -> BridgeError(code, ErrorCategory.VALIDATION, 400, false, executionState, message)
+        ErrorCode.CONFLICT -> BridgeError(code, ErrorCategory.VALIDATION, 409, false, executionState, message)
         ErrorCode.UPSTREAM_UNAVAILABLE -> BridgeError(code, ErrorCategory.PROVIDER, 502, true, executionState, message)
         ErrorCode.RATE_LIMITED -> BridgeError(code, ErrorCategory.PROVIDER, 429, true, executionState, message)
         ErrorCode.TIMEOUT -> BridgeError(code, ErrorCategory.TRANSPORT, 504, true, executionState, message)
