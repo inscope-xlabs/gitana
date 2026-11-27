@@ -26,6 +26,7 @@ import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.plugins.bodylimit.RequestBodyLimit
+import io.ktor.server.request.path
 import io.ktor.server.response.ApplicationSendPipeline
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
@@ -253,6 +254,7 @@ class KtorListenerFactory(
     private val limits: LocalLimits = LocalLimits(),
 ) : LocalListenerFactory {
     private val guard = HostHeaderGuard()
+    private val auth = LocalAuthPlugin()
     private val rateLimiter = LocalRateLimiter(limits.rateLimitPerMinute, clock)
     private val inFlight = InFlightLimiter(limits.maxInFlight)
 
@@ -344,6 +346,16 @@ class KtorListenerFactory(
                 finish()
             } finally {
                 inFlight.release()
+            }
+        }
+
+        val authentication = PipelinePhase("LocalAuth")
+        insertPhaseAfter(ApplicationCallPipeline.Plugins, authentication)
+        intercept(authentication) {
+            val header = call.request.headers[HttpHeaders.Authorization]
+            if (!auth.isAuthorized(call.request.path(), header)) {
+                call.respondText("", status = HttpStatusCode.Unauthorized)
+                finish()
             }
         }
 
