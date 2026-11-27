@@ -151,6 +151,13 @@ reconciliation (B9) depend on it. Nothing may persist request bodies or file con
 
 ## Phase C: GitHub adapter (`bridge/github`)
 
+> **Status (26 November 2026): Standard 1 implemented; acceptance still pending.** C1 and C2 are implemented to
+> Standard 1, Stages 1–3 of [`docs/Coding Standards.md`](../Coding%20Standards.md): all six operations, the
+> GitHub transport, the Base64 codec (per `RTB-D18`), the rate-limit handler and the upstream error mapper. The
+> C1 acceptance criterion — mocked-REST contract tests for success, 409 and 429 for each operation — is Standard
+> 2, Stage 5 work and is **not** delivered by this pass, so C1 is not yet closed. `bridge/github` now depends on
+> `kotlinx-coroutines-core` and `kotlinx-serialization-json`.
+
 **C1. Six operations** (6a#6, 6b#16). `ops/ReadFile.kt`, `WriteFile.kt`, `CreateBranch.kt`, `DeleteFile.kt`,
 `ListBranches.kt`, `CreatePullRequest.kt`, plus `GitHubAdapter.kt`, `client/GitHubHttpClient.kt`,
 `codec/Base64Content.kt`. The phone resolves file SHA and base commit SHA itself (RTB-15). Handle empty repos,
