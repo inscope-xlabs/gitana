@@ -13,5 +13,7 @@ kotlin { compilerOptions { jvmTarget = JvmTarget.JVM_11 } }
 dependencies {
     implementation(project(":bridge:contracts"))
     implementation(project(":bridge:core"))
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.serialization.json)
   testImplementation(libs.junit)
 }
