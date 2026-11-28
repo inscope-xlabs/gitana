@@ -1,5 +1,7 @@
 # Remote Repository Tool Bridge: Navigation Transport Specification
 
+> **Status note (27 November 2026): predecessor material.** The Extended Gitana Navigation (XGN) Framework is now the authoritative source for agent ingress to Gitana. This document is retained as source material for the Composed GET workstream and is redistributed across the XGN specification set — principally [`docs/xgn/XGN_COMPOSED_GET_TRANSPORT.md`](../xgn/XGN_COMPOSED_GET_TRANSPORT.md), [`XGN_COMPOSED_GET_COMMAND_PROTOCOL.md`](../xgn/XGN_COMPOSED_GET_COMMAND_PROTOCOL.md) and [`XGN_COMPOSED_GET_LINK_AND_REPLAY_SECURITY.md`](../xgn/XGN_COMPOSED_GET_LINK_AND_REPLAY_SECURITY.md). Where this document and an XGN module disagree, XGN wins. Its "v2" references are out of scope for XGN and have no authority there. See [`docs/xgn/XGN_FRAMEWORK_SPECIFICATION_INDEX.md`](../xgn/XGN_FRAMEWORK_SPECIFICATION_INDEX.md).
+
 **Status:** Review draft | **Version:** 0.1-draft | **Date:** 25 November 2026
 **Companions:** [Tool Bridge v2](remote_repository_tool_bridge_v2_specification.md), [Cloudflare Relay](cloudflare_relay_specification.md)
 **Normative language:** MUST / MUST NOT / SHOULD / SHOULD NOT / MAY are requirements keywords.
