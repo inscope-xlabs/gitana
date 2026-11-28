@@ -34,3 +34,6 @@ include(
   ":bridge:local",
   ":bridge:relay",
 )
+
+// Framework-wide contracts, independent of any bridge component.
+include(":task:contract")
