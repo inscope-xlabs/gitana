@@ -1,0 +1,159 @@
+Use this prompt with the other agent:
+
+---
+
+## Prompt: Complete Phase D3 supporting changes (not the five main D3 files)
+
+You are working in repo **`inscope-xlabs/gitana`** on branch **`main`**.
+
+### Scope
+
+**Do not rewrite** these five Phase D3 files unless a minimal compile fix is required (they are already specified/implemented elsewhere):
+
+- `bridge/local/src/main/kotlin/.../local/mapping/LocalEnvelopeMapper.kt`
+- `bridge/local/src/main/kotlin/.../local/routes/HealthRoute.kt`
+- `bridge/local/src/main/kotlin/.../local/routes/CapabilitiesRoute.kt`
+- `bridge/local/src/main/kotlin/.../local/routes/ToolRoute.kt`
+- `bridge/local/src/main/kotlin/.../local/routes/RequestStatusRoute.kt`
+
+Your job is **every other change** needed so D3 actually runs: wiring, `BridgeService.cancel`, auth exemption for health, DI, tests, and compile/fix fixes.
+
+Follow:
+
+- `docs/x31/merged-plan.md` — Phase **D3** (and D2 only where required for health exemption / auth before routes)
+- `docs/Coding Standards.md` — classify, then advance **Standard 1** only (happy path → wired → errors/edges). Do not invent behaviour beyond the v2 spec and schemas.
+- Ground rules in the merged plan: edit existing paths; fail closed; decisions already recorded in Phase A.
+
+### Authoritative behaviour (must match)
+
+From plan D3 + OpenAPI `bridge.v1.yaml` + schemas:
+
+| Item | Requirement |
+|------|-------------|
+| Routes | `GET /api/v1/health` (no auth), `GET /api/v1/capabilities`, `POST /api/v1/tools/{operation}`, `GET /api/v1/requests/{request_id}`, `POST /api/v1/requests/{request_id}/cancel` |
+| Path vs body | Path `{operation}` **must** equal envelope `operation`; only the six `ToolOperation` wire names |
+| Unknown fields | Reject on request envelope (and per-op args as mapper does) |
+| Times | Wire RFC 3339 `…Z` → epoch millis inside `RequestEnvelope` |
+| Body size | Already rejected in D1 before parse; do not weaken |
+| SUCCEEDED+error | Must not be serialized as success |
+| Cancel (A3) | Pre-dispatch + `MANUAL_REVIEW` → `CANCELLED`; already `CANCELLED` idempotent OK; `EXECUTING` / `OUTCOME_UNKNOWN` / `RECONCILING` / other terminals → **409 CONFLICT** |
+| Response model | Non-mutating (`list_branches`, `read_file`) → **200** + `ResponseEnvelope`; mutating → **202** + `{request_id, state}`; poll status via GET |
+| Errors pre-request | Transport envelope `{"error": BridgeError}` (same as D1 `TransportErrors`) |
+| Auth (D2) | Bearer only in `Authorization`; pattern `Bearer [A-Za-z0-9_-]{43}`; missing/malformed → 401 `AUTH_FAILED`; token in query → 400 `VALIDATION_FAILED`; **never log token**; health path exempt |
+
+### Required work items
+
+#### 1. `BridgeService` — cancel API
+
+File: `bridge/core/.../application/BridgeService.kt`
+
+Add (names may match existing style):
+
+```text
+sealed interface CancelResult {
+  data class Ok(val state: RequestState) : CancelResult
+  data object NotFound : CancelResult
+  data class Conflict(val state: RequestState) : CancelResult
+}
+
+suspend fun cancel(requestId: String): CancelResult
+```
+
+Rules using existing `RequestState.canTransitionTo(CANCELLED)` / in-memory store + mutex:
+
+- Missing id → `NotFound`
+- Already `CANCELLED` → `Ok(CANCELLED)` (idempotent)
+- `canTransitionTo(CANCELLED)` → persist `CANCELLED`, `Ok`
+- Else → `Conflict(currentState)`
+
+Do not invent new lifecycle states. Keep Standard 1 error style (no crashes).
+
+#### 2. Wire routes into the local HTTP stack
+
+File: `bridge/local/.../LocalServer.kt` (`KtorListenerFactory`)
+
+Today the module only `installGuards()` and answers unknown routes with 404. You must:
+
+1. Inject **`BridgeService`** (and **`CredentialStorePort`** / `LocalAuthPlugin` if auth is not already wired).
+2. After host/limit/rate/in-flight guards (and **after auth**), dispatch:
+
+   - `GET /api/v1/health` → `HealthRoute`
+   - `GET /api/v1/capabilities` → `CapabilitiesRoute`
+   - `POST /api/v1/tools/{operation}` → `ToolRoute` (operation = path segment)
+   - `GET /api/v1/requests/{request_id}` → `RequestStatusRoute.status` (not `…/cancel`)
+   - `POST /api/v1/requests/{request_id}/cancel` → `RequestStatusRoute.cancel`
+
+3. Prefer path matching in an `ApplicationCallPipeline` interceptor if `ktor-server-routing` is not in the version catalog; **do not** add undeclared dependencies. If routing is already available transitively, using it is fine.
+4. Preserve D1 behaviour: loopback-only, Host/Origin guard, body limits, rate limit, in-flight limit, timeout, unknown route → `TransportErrors.notFound`.
+5. Auth must run on every route **except** health (`/api/v1/health` with optional trailing slash). Query-string credentials → 400; bad/missing bearer → 401.
+
+Add `TransportErrors.unauthorized` (`AUTH_FAILED` / 401) and `TransportErrors.tokenInQuery` (`VALIDATION_FAILED` / 400) if missing.
+
+#### 3. `LocalAuthPlugin` (only if still scaffold)
+
+If `LocalAuthPlugin.kt` is still “Scaffold only”:
+
+- Implement per D2: header-only bearer, 43-char base64url charset, health exempt, query-token reject, `CredentialStorePort.verify(LOCAL_CLIENT, CharArray)` with zeroing of presented chars, never log secrets.
+- Wire into `KtorListenerFactory` before route dispatch.
+
+If D2 is already implemented, only ensure health exemption and that routes see authenticated calls.
+
+#### 4. App / DI composition
+
+File(s): `app/.../di/BridgeGraph.kt` (and any service that builds `LocalServer` / `KtorListenerFactory`)
+
+- Construct one shared `BridgeService` and pass it into the local listener factory / routes.
+- Provide a `CredentialStorePort` implementation or test double for local auth (vault may still be scaffold — fail closed if verify fails).
+- Local transport failure must not depend on relay (RTB-29).
+
+Do not create files at guessed paths; only edit existing composition roots.
+
+#### 5. Tests (Standard 1 / Stage 3 coverage)
+
+Add or extend under `bridge/local/src/test/...` and core tests as needed:
+
+**Mapper / route logic (unit):**
+
+- Valid `list_branches` / `read_file` parse; path operation mismatch → validation fail
+- Unknown envelope field → fail
+- Invalid RFC 3339 → fail
+- `toResponseJson(SUCCEEDED + error)` rejected
+- Only six operations accepted
+
+**Cancel:**
+
+- Unknown id → NotFound  
+- RECEIVED/AUTHORIZED/AWAITING_APPROVAL/MANUAL_REVIEW → CANCELLED  
+- Already CANCELLED → Ok  
+- EXECUTING (or other non-cancellable) → Conflict  
+
+**Integration-style (optional but preferred if D1 `LoopbackBindingTest` pattern exists):**
+
+- `GET /api/v1/health` without `Authorization` → 200 `{"status":"ok"}`
+- Capabilities without auth → 401; with valid bearer → 200 and six operations
+- Unknown tool path → 404
+- Bad Host still 403; oversize Content-Length still 413
+
+Use fakes for `CredentialStorePort` and `BridgeService` / pipeline where needed. JUnit only unless the module already has more.
+
+#### 6. Compile / API consistency
+
+- Fix imports and constructor signatures so `ToolRoute` / `RequestStatusRoute` compile against real `BridgeService`.
+- If `ToolRoute` still has a broken “unknown operation” path that parses a dummy body, replace with a clean 404/`NOT_FOUND` transport error — **minimal edit only**.
+- `org.json` is acceptable on the Android `bridge/local` module; do **not** add kotlinx-serialization unless the catalog already has it and the project uses it.
+- Do not log request bodies, tokens, or file content (RTB-07, RTB-09, RTB-23).
+
+#### 7. Out of scope
+
+- Phase E relay, Phase F audit polish, real GitHub ops (C1), real Keystore vault implementation beyond what’s required for `verify` to be callable
+- Standard 2/3 coding-standards stages (lifecycle polish, full CI, KDoc sweep) unless required to compile
+- New modules or speculative file paths
+
+### Deliverable
+
+1. Short classification note (which files, Standard 1 stage before/after).
+2. Concrete diffs/edits on the supporting files listed above.
+3. How to run the new/updated unit tests.
+4. List any blocked dependency (e.g. vault still scaffold) and the fail-closed behaviour left in place.
+
+**Start by reading** current `LocalServer.kt` / `KtorListenerFactory`, `BridgeService.kt`, `LocalAuthPlugin.kt`, `BridgeGraph.kt`, and existing `LoopbackBindingTest.kt`, then apply the smallest set of changes that makes D3 routes reachable and cancellable end-to-end on Path A (local loopback).

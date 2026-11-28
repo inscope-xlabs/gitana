@@ -79,7 +79,9 @@ class BridgeService(
             pipeline.execute(request) { nextState ->
                 mutex.withLock {
                     store[request.requestId]?.let { current ->
-                        store[request.requestId] = current.copy(state = nextState)
+                        if (!current.state.terminal && current.state.canTransitionTo(nextState)) {
+                            store[request.requestId] = current.copy(state = nextState)
+                        }
                     }
                 }
             }
@@ -130,13 +132,43 @@ class BridgeService(
         }
 
         mutex.withLock {
-            store[request.requestId] = initialRecord.copy(
-                state = finalState,
-                completedAt = java.time.Instant.now(),
-            )
+            val current = store[request.requestId]
+            if (current?.state != RequestState.CANCELLED) {
+                store[request.requestId] = initialRecord.copy(
+                    state = finalState,
+                    completedAt = java.time.Instant.now(),
+                )
+            }
         }
 
         return responseEnvelope
+    }
+
+    /** Outcome of a cancellation request (A3). */
+    sealed interface CancelResult {
+        data class Ok(val state: RequestState) : CancelResult
+        data object NotFound : CancelResult
+        data class Conflict(val state: RequestState) : CancelResult
+    }
+
+    /**
+     * Cancels [requestId] when in a cancellable state (pre-dispatch or [RequestState.MANUAL_REVIEW]).
+     * Already-cancelled requests succeed idempotently.
+     */
+    suspend fun cancel(requestId: String): CancelResult = mutex.withLock {
+        if (requestId.isBlank()) return@withLock CancelResult.NotFound
+        val current = store[requestId] ?: return@withLock CancelResult.NotFound
+        if (current.state == RequestState.CANCELLED) {
+            return@withLock CancelResult.Ok(RequestState.CANCELLED)
+        }
+        if (current.state.canTransitionTo(RequestState.CANCELLED)) {
+            store[requestId] = current.copy(
+                state = RequestState.CANCELLED,
+                completedAt = java.time.Instant.now(),
+            )
+            return@withLock CancelResult.Ok(RequestState.CANCELLED)
+        }
+        CancelResult.Conflict(current.state)
     }
 
     /**
@@ -145,6 +177,18 @@ class BridgeService(
      */
     suspend fun getStatus(requestId: String): RequestState? = mutex.withLock {
         store[requestId]?.state
+    }
+
+    internal suspend fun seedStateForTest(requestId: String, state: RequestState) {
+        mutex.withLock {
+            val now = java.time.Instant.now()
+            store[requestId] = RequestRecord(
+                requestId = requestId,
+                state = state,
+                createdAt = now,
+                completedAt = if (state.terminal) now else null,
+            )
+        }
     }
 
     private fun toBridgeError(

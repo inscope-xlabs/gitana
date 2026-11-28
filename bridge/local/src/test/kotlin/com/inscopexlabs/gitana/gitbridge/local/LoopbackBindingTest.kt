@@ -1,6 +1,19 @@
 package com.inscopexlabs.gitana.gitbridge.local
 
+import com.inscopexlabs.gitana.gitbridge.contracts.credential.CredentialClass
+import com.inscopexlabs.gitana.gitbridge.contracts.envelope.RequestEnvelope
+import com.inscopexlabs.gitana.gitbridge.contracts.tool.ToolResult
+import com.inscopexlabs.gitana.gitbridge.core.application.AuditSink
+import com.inscopexlabs.gitana.gitbridge.core.application.BridgeService
+import com.inscopexlabs.gitana.gitbridge.core.application.GitHubAdapter
+import com.inscopexlabs.gitana.gitbridge.core.application.InMemoryWriteCoordinator
+import com.inscopexlabs.gitana.gitbridge.core.application.RequestPipeline
+import com.inscopexlabs.gitana.gitbridge.core.approval.ApprovalGate
+import com.inscopexlabs.gitana.gitbridge.core.approval.ApprovalResult
+import com.inscopexlabs.gitana.gitbridge.core.policy.PolicyConfig
+import com.inscopexlabs.gitana.gitbridge.core.policy.PolicyEngineImpl
 import com.inscopexlabs.gitana.gitbridge.core.ports.ClockPort
+import com.inscopexlabs.gitana.gitbridge.core.ports.CredentialStorePort
 import java.net.BindException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -70,12 +83,23 @@ class LoopbackBindingTest {
         try {
             server.start()
             assertTrue("${server.state.value}", server.state.value is LocalServerState.Running)
-            val unknownRoute = exchange(port, "Host: 127.0.0.1:$port")
+            val unauthorized = exchange(port, "Host: 127.0.0.1:$port")
+            assertTrue(unauthorized, unauthorized.startsWith("HTTP/1.1 401"))
+            val unknownRoute = exchange(
+                port,
+                "Host: 127.0.0.1:$port",
+                "Authorization: Bearer $validToken",
+            )
             assertTrue(unknownRoute, unknownRoute.startsWith("HTTP/1.1 404"))
             assertTrue(unknownRoute, "\"code\":\"NOT_FOUND\"" in unknownRoute)
             val badHost = exchange(port, "Host: example.org")
             assertTrue(badHost, badHost.startsWith("HTTP/1.1 403"))
-            val tooLarge = exchange(port, "Host: localhost", "Content-Length: 2097153")
+            val tooLarge = exchange(
+                port,
+                "Host: localhost",
+                "Authorization: Bearer $validToken",
+                "Content-Length: 2097153",
+            )
             assertTrue(tooLarge, tooLarge.startsWith("HTTP/1.1 413"))
         } finally {
             server.stop()
@@ -109,11 +133,55 @@ class LoopbackBindingTest {
             }
         }
 
+    private val validToken = "A".repeat(43)
+
     private fun ktorServer(port: Int): LocalServer {
         val clock = object : ClockPort {
             override fun nowMillis(): Long = System.currentTimeMillis()
         }
-        return LocalServer(KtorListenerFactory(clock, {}), {}, port)
+        val credentials = object : CredentialStorePort {
+            override fun <T> withGitHubToken(block: (CharArray) -> T): T =
+                error("not used in LoopbackBindingTest")
+
+            override fun verify(credentialClass: CredentialClass, presented: CharArray): Boolean {
+                if (credentialClass != CredentialClass.LOCAL_CLIENT) return false
+                val expected = validToken.toCharArray()
+                return try {
+                    if (presented.size != expected.size) return false
+                    var diff = 0
+                    for (i in presented.indices) {
+                        diff = diff or (presented[i].code xor expected[i].code)
+                    }
+                    diff == 0
+                } finally {
+                    expected.fill('\u0000')
+                }
+            }
+
+            override fun revoke(credentialClass: CredentialClass) = Unit
+        }
+        val bridge = BridgeService(
+            RequestPipeline(
+                policyEngine = PolicyEngineImpl { PolicyConfig.default() },
+                approvalGate = object : ApprovalGate {
+                    override suspend fun requestApproval(
+                        request: RequestEnvelope,
+                        reason: String,
+                    ): ApprovalResult = ApprovalResult.DENIED
+                },
+                githubAdapter = object : GitHubAdapter {
+                    override suspend fun dispatch(
+                        request: RequestEnvelope,
+                        canonicalPath: String?,
+                    ): ToolResult = error("not used in LoopbackBindingTest")
+                },
+                auditSink = object : AuditSink {
+                    override suspend fun record(request: RequestEnvelope, result: ToolResult) = Unit
+                },
+                writeCoordinator = InMemoryWriteCoordinator(),
+            ),
+        )
+        return LocalServer(KtorListenerFactory(clock, {}, credentials, bridge), {}, port)
     }
 
     private fun freePort(): Int =

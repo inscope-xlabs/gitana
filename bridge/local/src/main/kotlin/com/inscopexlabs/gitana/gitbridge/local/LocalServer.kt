@@ -4,13 +4,21 @@ import com.inscopexlabs.gitana.gitbridge.contracts.error.BridgeError
 import com.inscopexlabs.gitana.gitbridge.contracts.error.ErrorCategory
 import com.inscopexlabs.gitana.gitbridge.contracts.error.ErrorCode
 import com.inscopexlabs.gitana.gitbridge.contracts.error.ExecutionState
+import com.inscopexlabs.gitana.gitbridge.core.application.BridgeService
 import com.inscopexlabs.gitana.gitbridge.core.ports.ClockPort
+import com.inscopexlabs.gitana.gitbridge.core.ports.CredentialStorePort
 import com.inscopexlabs.gitana.gitbridge.local.limits.ContentLengthCheck
 import com.inscopexlabs.gitana.gitbridge.local.limits.InFlightLimiter
 import com.inscopexlabs.gitana.gitbridge.local.limits.LocalLimits
 import com.inscopexlabs.gitana.gitbridge.local.limits.LocalRateLimiter
+import com.inscopexlabs.gitana.gitbridge.local.mapping.LocalEnvelopeMapper
+import com.inscopexlabs.gitana.gitbridge.local.routes.CapabilitiesRoute
+import com.inscopexlabs.gitana.gitbridge.local.routes.HealthRoute
+import com.inscopexlabs.gitana.gitbridge.local.routes.RequestStatusRoute
+import com.inscopexlabs.gitana.gitbridge.local.routes.ToolRoute
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.content.TextContent
@@ -26,6 +34,9 @@ import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.plugins.bodylimit.RequestBodyLimit
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
+import io.ktor.server.request.queryString
 import io.ktor.server.response.ApplicationSendPipeline
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
@@ -250,11 +261,19 @@ class LocalListenerStartException(cause: Throwable) : RuntimeException("Listener
 class KtorListenerFactory(
     clock: ClockPort,
     private val diagnostics: LocalDiagnostics,
+    private val credentials: CredentialStorePort,
+    private val bridge: BridgeService,
     private val limits: LocalLimits = LocalLimits(),
 ) : LocalListenerFactory {
     private val guard = HostHeaderGuard()
+    private val auth = LocalAuthPlugin(credentials)
     private val rateLimiter = LocalRateLimiter(limits.rateLimitPerMinute, clock)
     private val inFlight = InFlightLimiter(limits.maxInFlight)
+    private val mapper = LocalEnvelopeMapper()
+    private val healthRoute = HealthRoute(mapper)
+    private val capabilitiesRoute = CapabilitiesRoute(mapper)
+    private val toolRoute = ToolRoute(bridge, mapper)
+    private val requestStatusRoute = RequestStatusRoute(bridge, mapper)
 
     override fun create(host: String, port: Int, onFailure: (Throwable) -> Unit): LocalListener {
         val address = LoopbackBinding.requireLoopback(host)
@@ -306,6 +325,23 @@ class KtorListenerFactory(
                 call.reject(TransportErrors.forbidden)
                 return@intercept finish()
             }
+            when (
+                auth.authenticate(
+                    path = call.request.path(),
+                    authorizationHeaders = headers.getAll(HttpHeaders.Authorization).orEmpty(),
+                    queryString = call.request.queryString().ifEmpty { null },
+                )
+            ) {
+                AuthDecision.Ok -> Unit
+                AuthDecision.Unauthorized -> {
+                    call.reject(TransportErrors.unauthorized)
+                    return@intercept finish()
+                }
+                AuthDecision.TokenInQuery -> {
+                    call.reject(TransportErrors.tokenInQuery)
+                    return@intercept finish()
+                }
+            }
             when (limits.checkContentLength(headers.getAll(HttpHeaders.ContentLength).orEmpty())) {
                 ContentLengthCheck.MALFORMED -> {
                     call.reject(TransportErrors.malformedLength)
@@ -347,10 +383,14 @@ class KtorListenerFactory(
             }
         }
 
-        // Ktor's own fallback answers 404 with an empty body and is registered ahead of module
-        // interceptors, so unknown routes are answered in a phase before it.
+        // Dispatch D3 routes inside a dedicated phase after Plugins guards and before UnknownRoute.
         val unknownRoute = PipelinePhase("UnknownRoute")
+        val localRoutes = PipelinePhase("LocalRoutes")
         insertPhaseBefore(ApplicationCallPipeline.Fallback, unknownRoute)
+        insertPhaseBefore(unknownRoute, localRoutes)
+        intercept(localRoutes) {
+            dispatchRoute(call)
+        }
         intercept(unknownRoute) {
             if (!call.response.isCommitted && call.response.status() == null) {
                 call.reject(TransportErrors.notFound)
@@ -370,6 +410,30 @@ class KtorListenerFactory(
                     ),
                 )
             }
+        }
+    }
+
+    private suspend fun dispatchRoute(call: ApplicationCall) {
+        val method = call.request.httpMethod
+        val segments = call.request.path().trim('/').split('/').filter { it.isNotEmpty() }
+        if (segments.size < 3 || segments[0] != "api" || segments[1] != "v1") return
+
+        when {
+            method == HttpMethod.Get && segments.size == 3 && segments[2] == "health" ->
+                healthRoute.handle(call)
+
+            method == HttpMethod.Get && segments.size == 3 && segments[2] == "capabilities" ->
+                capabilitiesRoute.handle(call)
+
+            method == HttpMethod.Post && segments.size == 4 && segments[2] == "tools" ->
+                toolRoute.handle(call, segments[3])
+
+            method == HttpMethod.Get && segments.size == 4 && segments[2] == "requests" ->
+                requestStatusRoute.status(call, segments[3])
+
+            method == HttpMethod.Post && segments.size == 5 &&
+                segments[2] == "requests" && segments[4] == "cancel" ->
+                requestStatusRoute.cancel(call, segments[3])
         }
     }
 
@@ -401,6 +465,14 @@ class KtorListenerFactory(
 
 /** Pre-request errors, with the fields fixed by the `error.v1.json` catalogue. */
 internal object TransportErrors {
+    val unauthorized = error(
+        ErrorCode.AUTH_FAILED, ErrorCategory.AUTHENTICATION, 401, false,
+        ExecutionState.NOT_STARTED, "Local-client authentication failed.",
+    )
+    val tokenInQuery = error(
+        ErrorCode.VALIDATION_FAILED, ErrorCategory.VALIDATION, 400, false,
+        ExecutionState.NOT_STARTED, "Credentials must not appear in the query string.",
+    )
     val forbidden = error(
         ErrorCode.FORBIDDEN, ErrorCategory.AUTHORIZATION, 403, false,
         ExecutionState.NOT_STARTED, "Host or Origin is not permitted.",

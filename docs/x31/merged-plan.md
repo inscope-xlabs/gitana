@@ -173,11 +173,15 @@ conflict with no auto-retry; unmapped to a non-retryable upstream error. Depends
 
 ## Phase D: Local transport (`bridge/local`, `app`)
 
-> **D1 status (26 November 2026):** implemented to Standard 1 (Stages 1 to 3 of
-> [`docs/Coding Standards.md`](../Coding%20Standards.md)); D2 and D3 are not started. Proposed dependency decision,
-> pending owner approval: Ktor **3.6.1** with the CIO engine. Open: Appendix D defines no connection limit and CIO
-> offers no maximum connection count (RTB-20); the rate limit is a single global bucket until D2 supplies a principal;
-> `app` wiring is Phase F.
+> **Phase D status (D1–D3 — Standard 1 compliant):** **D1, D2, and D3** are implemented to **Standard 1** (Stages 1 to 3 of
+> [`docs/Coding Standards.md`](../Coding%20Standards.md)). D2 adds `LocalAuthPlugin` (wired into `KtorListenerFactory`
+> after `HostHeaderGuard`, with `LocalAuthPluginTest` and `LoopbackBindingTest`), and D3 adds `HealthRoute`,
+> `CapabilitiesRoute`, `ToolRoute`, `RequestStatusRoute`, `LocalEnvelopeMapper`, `BridgeService.cancel`, `LocalRoutes`
+> dispatch in `LocalServer.kt`, local `BridgeGraph.kt` wiring, and `LocalEnvelopeMapperTest`/`LocalServerRoutesTest`/
+> `BridgeServiceCancelTest`. Proposed dependency decision, pending owner approval: Ktor **3.6.1** with the CIO engine.
+> Open for Standard 2/3 & Phase F: Appendix D defines no connection limit and CIO offers no maximum connection count
+> (RTB-20), rate limiting remains a single global bucket until per-principal keying is wired, and full app/vault/GitHub/relay
+> wiring remains in Phase F.
 
 **D1. Server, binding, guards and limits** (6a#7, 6b#18) `LocalServer.kt`, `LoopbackBinding.kt`,
 `HostHeaderGuard.kt`, `limits/LocalLimits.kt`; add the HTTP server dependency in `bridge/local/build.gradle.kts` (a version
@@ -185,14 +189,18 @@ decision is needed; none exists yet). Bind `127.0.0.1:18765` (mandatory) and `::
 logged and non-fatal; IPv4 failure prevents start; refuse non-loopback. Appendix D limits. Extend
 `LoopbackBindingTest.kt`. Depends on A2.
 
-**D2. Authentication** (6b#19) `LocalAuthPlugin.kt`. Local-client bearer (43 characters) from the `Authorization`
-header only, on every route except health. Missing or malformed gives 401; a token in the query string gives 400;
-never logged (RTB-22, RTB-23, RTB-04).
+**D2. Authentication** (6b#19) `LocalAuthPlugin.kt` *(Standard 1 compliant — Stages 1–3 of `docs/Coding Standards.md`;
+wired into `KtorListenerFactory` in `LocalServer.kt`, with `LocalAuthPluginTest.kt` and `LoopbackBindingTest.kt` passing)*.
+Local-client bearer (43 characters) from the `Authorization` header only, on every route except health. Missing or
+malformed gives 401; a token in the query string gives 400; never logged (RTB-22, RTB-23, RTB-04).
 
 **D3. Routes and envelope mapping** (6a#7, 6b#20, 6b#21) `routes/ToolRoute.kt`, `HealthRoute.kt`,
-`CapabilitiesRoute.kt`, `RequestStatusRoute.kt` (and cancel if A3 keeps it), `mapping/LocalEnvelopeMapper.kt`.
-Path operation must equal the envelope's `operation`; only the six operations are routable; unknown fields rejected;
-RFC 3339 converted to epoch millis; oversize body rejected before parsing; `SUCCEEDED` with an error is rejected.
+`CapabilitiesRoute.kt`, `RequestStatusRoute.kt` (and cancel if A3 keeps it), `mapping/LocalEnvelopeMapper.kt`
+*(Standard 1 compliant — Stages 1–3 of `docs/Coding Standards.md`; wired via `LocalRoutes` in `LocalServer.kt`,
+`BridgeService.cancel` in `bridge/core`, and `BridgeGraph.kt`, with `LocalEnvelopeMapperTest.kt`,
+`LocalServerRoutesTest.kt`, and `BridgeServiceCancelTest.kt` passing)*. Path operation must equal the envelope's
+`operation`; only the six operations are routable; unknown fields rejected; RFC 3339 converted to epoch millis; oversize
+body rejected before parsing; `SUCCEEDED` with an error is rejected.
 
 ---
 

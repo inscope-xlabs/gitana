@@ -1,0 +1,40 @@
+Wire into KtorListenerFactory (excerpt for installGuards)
+Add the plugin and the two transport errors, then intercept before the other guards:
+
+// In KtorListenerFactory constructor / fields:
+private val auth = LocalAuthPlugin(credentials)  // CredentialStorePort injected
+
+// In TransportErrors:
+val unauthorized = error(
+    ErrorCode.AUTH_FAILED, ErrorCategory.AUTHENTICATION, 401, false,
+    ExecutionState.NOT_STARTED, "Local-client authentication failed.",
+)
+val tokenInQuery = error(
+    ErrorCode.VALIDATION_FAILED, ErrorCategory.VALIDATION, 400, false,
+    ExecutionState.NOT_STARTED, "Credentials must not appear in the query string.",
+)
+
+// Inside intercept(ApplicationCallPipeline.Plugins), first actionable check after Host guard
+// (or immediately at the top of the interceptor — order is flexible as long as auth runs
+// before dispatch; health exemption is inside LocalAuthPlugin):
+when (
+    auth.authenticate(
+        path = call.request.path(),
+        authorizationHeaders = headers.getAll(HttpHeaders.Authorization).orEmpty(),
+        queryString = call.request.queryString().ifEmpty { null },
+    )
+) {
+    AuthDecision.Ok -> Unit
+    AuthDecision.Unauthorized -> {
+        call.reject(TransportErrors.unauthorized)
+        return@intercept finish()
+    }
+    AuthDecision.TokenInQuery -> {
+        call.reject(TransportErrors.tokenInQuery)
+        return@intercept finish()
+    }
+}
+
+
+
+KtorListenerFactory must receive a CredentialStorePort (constructor injection). Until the vault is implemented, tests supply a fake that implements verify with constant-time equality against a known 43-character token.

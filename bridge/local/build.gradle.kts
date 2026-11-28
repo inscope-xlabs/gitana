@@ -20,4 +20,5 @@ dependencies {
   implementation(libs.ktor.server.cio)
   implementation(libs.ktor.server.body.limit)
   testImplementation(libs.junit)
+  testImplementation(libs.org.json)
 }
