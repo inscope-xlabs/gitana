@@ -3,19 +3,42 @@
 Merges the two plans in this directory (`info-6a.txt`, an ordered task list, and `info-6b.txt`, a phased plan with
 decisions first) into one. Source references are given as `6a#n` / `6b#n`.
 
-**Goal:** make the sample task (`example-org/sandbox`: `read_file`, `create_branch`, `write_file`,
-`create_pull_request`) executable on Path A (local loopback) and Path B (trusted relay), with the five failure
-paths covered by tests.
+**Goal:** make the sample task run end to end on `example-org/sandbox`: the operator approves a Session Plan for a
+task; Gitana creates the task branch and task directory; only then does a session exist and agent access open; the
+agent runs `read_file`, `write_file` and `create_pull_request` on Path A (local loopback) and Path B (trusted relay,
+session surface map URL); the operator approves each mutation; the session closes. Failure paths are covered by tests.
+
+### End-to-end flow
+
+| # | Step | Actor | Exit condition | Tasks |
+|---|---|---|---|---|
+| 1 | Create the task (`TaskContract`) | Operator | `validate()` returns no issues | S1 |
+| 2 | Review and approve the Session Plan | Operator, on device | Approval recorded against the exact plan | S2, F5 |
+| 3 | Create the task branch and task directory | Gitana | Both read back from GitHub | S3 |
+| 4 | Create the session and grant; issue the session URL (B) or session bearer (A) to the operator | Gitana | Session `LOCKED` | S4 |
+| 5 | Hand over the URL or bearer; confirm pairing | Operator | Session `ACTIVE` | S4, E6 |
+| 6 | Open the surface map and read | Agent | Replies stay inside the grant | S5, E5 to E7 |
+| 7 | Compose, preview, commit | Agent | Request enters the v2 lifecycle at `RECEIVED` | E7 |
+| 8 | Evaluate policy, approve, dispatch | Phone, operator | Terminal state or `OUTCOME_UNKNOWN` | B1 to B9, C1 |
+| 9 | Read the result; repeat 7 and 8 for the next step | Agent | Pull request from task branch to base | E7 |
+| 10 | Complete, expire or revoke the session | Gitana, operator | No link or bearer works; audit records exist | S6, F2 |
+
+**No agent access exists before step 4 succeeds, on any transport.**
 
 ## Ground rules
 
-1. Work only in `inscope-xlabs/gitana`. Do not invent behaviour beyond the v2 specification, the schemas and the
-   exit-tasks document.
+1. Work only in `inscope-xlabs/gitana`. This plan is governed by v2 only: the v2 specification, the Cloudflare relay
+   specification, the Navigation Transport Specification (used here as a v2 companion), the schemas and the
+   exit-tasks document. Do not invent behaviour beyond them and the decisions in A9 to A12.
 2. **Decisions before code.** A code task whose decision is not yet recorded must not start on a guess. Record the
    decision in the spec and schema first (Phase A).
 3. Edit the existing files named below. Do not create files at guessed paths.
 4. Fail closed. Stubs that currently deny everything stay that way until their task is complete and tested.
 5. A task is done only when its acceptance check passes and, where relevant, the exit-tasks checkbox is ticked.
+6. **XGN.** `docs/xgn/` does not govern this plan. Two exceptions: the session rule above (plan, branch and directory
+   before access), and Phase E, which follows XGN as closely as possible and records each departure in the Phase E
+   deviation table. XGN states it is authoritative for agent ingress (XGN-00 §1), and the Navigation Transport
+   Specification is marked as XGN predecessor material; this plan departs from both statements by owner decision.
 
 **Path convention.** `<m>:Name.kt` means
 `bridge/<m>/src/main/kotlin/com/inscopexlabs/gitana/gitbridge/<m>/…/Name.kt` for bridge modules, and `app:Name.kt`
@@ -44,7 +67,7 @@ The plans were written without sight of the current repository. Reconciled here:
 
 ## Phase A: Close the open decisions (blocking)
 
-> **Status: COMPLETED & CLOSED (26 November 2026).** All Phase A decisions (`A1`–`A8`) are recorded in `remote_repository_tool_bridge_v2_specification.md` (`RTB-D10`–`RTB-D17`), `cloudflare_relay_specification.md`, `bridge/contracts/SCHEMAS.md`, `bridge/contracts/src/main/resources/schemas/*.json` (including `path-normalization-test-vectors.v1.json`), `bridge/contracts/src/main/resources/openapi/bridge.v1.yaml`, and synced Kotlin contract twins (`RequestState.kt`, `ErrorCode.kt`, `ToolResult.kt`). Phases B–E are unblocked.
+> **Status: COMPLETED & CLOSED (26 November 2026).** All Phase A decisions (`A1`–`A8`) are recorded in `remote_repository_tool_bridge_v2_specification.md` (`RTB-D10`–`RTB-D17`), `cloudflare_relay_specification.md`, `bridge/contracts/SCHEMAS.md`, `bridge/contracts/src/main/resources/schemas/*.json` (including `path-normalization-test-vectors.v1.json`), `bridge/contracts/src/main/resources/openapi/bridge.v1.yaml`, and synced Kotlin contract twins (`RequestState.kt`, `ErrorCode.kt`, `ToolResult.kt`). Phases B–D are unblocked. **A9–A12 are open** and block Phases S and E. A11 amends A4 and A7.
 
 No code dependencies. A1 to A7 may run in parallel. Each ends with the spec, schema, OpenAPI, `SCHEMAS.md` and
 exit-tasks checkboxes updated together.
@@ -99,6 +122,36 @@ exit-tasks checkboxes updated together.
 - State that the Navigation Transport is a separate plane and the sample task does not inherit its session rules
   (cross-reference only).
 - Clean the status header and §15 wording.
+
+---
+
+### Added decisions (open)
+
+**A9. Session Plan and bootstrap.** Record in the v2 specification:
+- The Session Plan is a record separate from `TaskContract` that refers to `taskId` and `revision`. A task is all that
+  is needed to start; the plan is derived from it and the operator approves it.
+- Fields: repository, base branch, task branch (default `agent/<task-id>`), task directory (default
+  `tasks/<task-id>/`), allowed operations, ordered steps, limits, lifetime, channel. Define the slug rule that turns
+  `taskId` into a branch and path segment.
+- The task directory is the session's only path scope. Git stores no empty directories, so bootstrap commits
+  `<task-dir>/TASK.md` (task ID, revision, title, objective; no credentials). It must not sit under a protected path.
+  Decide whether it stays in the pull request.
+- Plan approval authorizes exactly the two bootstrap writes. Any plan or task revision change voids it.
+
+**A10. Session and grant.** Session states (Navigation Transport §5), grant contents, grant immutability, lifetime
+(2 hours, operator-extendable), operator revocation, and the credential per path: a capability URL on Path B, a
+per-session bearer on Path A replacing the long-lived local-client bearer (amends RTB-22, RTB-23 and D2). Amend the
+v2 "Navigation Transport boundary" note, which says the sample task does not inherit Navigation Transport session
+rules (recorded under A8): under this plan the sample task requires a Session Plan and an active session on both
+paths. Session,
+draft and capability state stays in memory (RTB-07); a restart ends the session.
+
+**A11. Navigation surface over the relay.** Record the Phase E rules: pairing, capability format, commands, relay frame
+types, routes under `/gitana/`, capability routing, limits and the added error codes. Update both relay documents,
+`relay-envelope.v1.json`, `error.v1.json`, `ErrorCode.kt` and `SCHEMAS.md`.
+
+**A12. Relay service location.** Choose the directory, language, build and deployment method for the Cloudflare Worker
+and Durable Objects. The repository has no Worker code.
 
 ---
 
@@ -183,6 +236,8 @@ conflict with no auto-retry; unmapped to a non-retryable upstream error. Depends
 > (RTB-20), rate limiting remains a single global bucket until per-principal keying is wired, and full app/vault/GitHub/relay
 > wiring remains in Phase F.
 
+> **Rework pending (A10, S5):** D2 moves to the per-session bearer, and D1 to D3 routes pass the session access gate.
+
 **D1. Server, binding, guards and limits** (6a#7, 6b#18) `LocalServer.kt`, `LoopbackBinding.kt`,
 `HostHeaderGuard.kt`, `limits/LocalLimits.kt`; add the HTTP server dependency in `bridge/local/build.gradle.kts` (a version
 decision is needed; none exists yet). Bind `127.0.0.1:18765` (mandatory) and `::1` when supported; IPv6 failure is
@@ -204,20 +259,116 @@ body rejected before parsing; `SUCCEEDED` with an error is rejected.
 
 ---
 
-## Phase E: Relay (`bridge/relay`)
+## Phase S: Task, Session Plan, bootstrap and grant
 
-**E1. Client and connection** (6a#8, 6b#22) `RelayClient.kt`, `RelayConnectionManager.kt`, `RelayConfig.kt`,
+New code. A9 and A10 record module and file locations before any file is created.
+
+**S1. Task intake.** Wire `:task:contract` into the bridge. Only a `TaskContract` that passes `validate()` can produce a
+plan. Acceptance: an invalid task produces no plan.
+
+**S2. Session Plan and approval.** Build the plan from the task. Operations are a subset of
+`TaskAuthority.effectiveOperations`; `forbiddenOperations` always wins. Reject an unapproved repository, a public
+repository, a protected task branch or a protected task directory. The operator approves on the device; record a
+digest of the plan. Acceptance: a changed plan or task revision cannot use an earlier approval.
+
+**S3. Bootstrap.** After approval, and with the operator as principal (S5 applies to agent requests only; the plan
+approval satisfies the approval gate): verify the repository is private and
+allow-listed; read the base head; create the task branch from it; commit `TASK.md`; read both back. Reuse
+`CreateBranch` and `WriteFile` through the pipeline, so write serialization, audit and reconciliation apply. The
+visibility check is a fixed internal GitHub read, not a new agent operation. Re-running is safe: resume only if the
+existing branch matches this plan (at the base head, or one commit ahead containing the expected `TASK.md`);
+otherwise stop for the operator. Never delete or force-update a branch. Acceptance: tests for success, existing
+foreign branch, public repository, and lost acknowledgement on each write. Any failure creates no session and no URL.
+Depends on S2, B1, B9, C1.
+
+**S4. Session and grant.** Only a successful S3 creates them. The grant fixes repository, task branch, task directory,
+base branch, operations, steps and limits. Issue the URL or bearer to the operator only. The session stays `LOCKED`
+until pairing is confirmed on the device. Acceptance: no agent route succeeds before `ACTIVE`.
+
+**S5. Access gate and grant policy.** Every agent request, on every transport, resolves to one `ACTIVE` session or is
+denied before any GitHub call. Added to `PolicyEngine` ahead of the B5 order, and rechecked before dispatch:
+- repository equals the grant; reads and writes target the task branch; paths fall inside the task directory
+  (segment boundary, after RTB-49 normalization);
+- `list_branches` returns only the task branch;
+- `create_branch` and `delete_file` are denied to the agent (bootstrap already created the branch);
+- `TASK.md` is read-only to the agent;
+- `create_pull_request` has head equal to the task branch and base equal to the plan's base;
+- every agent mutation requires operator approval (Navigation Transport §9.3), whatever the policy default.
+Apply the same gate to the Phase D local routes: the bearer resolves the session, so the request envelope is unchanged.
+Acceptance: one test per rule on both paths. D1 to D3 need rework for the session bearer. Because this gate runs
+first, it can refuse a request before the B5 rules are reached, so B3 to B5 keep direct tests of the allow-list,
+protected branch and protected path rules.
+
+**S6. Session end.** Completion, expiry, suspension and revocation take effect immediately: links and bearer stop
+working, drafts are dropped, undispatched requests are cancelled. A dispatched request is reconciled, never recalled.
+The branch and pull request remain. Acceptance: tests for each, including revocation during `EXECUTING`.
+
+---
+
+## Phase E: Relay and session surface map
+
+Path B is end to end only when all three parts exist: the relay service, the phone's relay client and the phone's
+navigation adapter. XGN module references show the source of each rule.
+
+```
+Agent --HTTPS GET--> Worker --> Durable Object (device) <--outbound WSS-- Phone: navigation adapter --> BridgeService
+```
+
+**E1. Relay service** (A12) (XGN-20). Worker plus one Durable Object per device. Routes: device connect, health, and
+`GET /gitana/nav/v1/s`. It checks form only (route, method, parameter names and order, sizes, rate) and never judges
+operations, paths or branches. It persists no content, arguments or replies and logs no query string. One delivery in
+flight per session. No queueing: an unreachable phone returns `DEVICE_OFFLINE`. Responses are `no-store`.
+
+**E2. Capability routing** (XGN-20, XGN-29). The phone issues `cap_` plus 22 base64url characters and registers only
+its hash, device and expiry with the relay. The relay uses the hash to route; the phone's record is authoritative. An
+unknown capability is refused without contacting a device.
+
+**E3. Client and connection** (6a#8, 6b#22) `RelayClient.kt`, `RelayConnectionManager.kt`, `RelayConfig.kt`,
 `FrameLimits.kt`; add a WebSocket dependency (version decision needed). Outbound WSS only, no inbound listener,
-reconnect with backoff, relay-device credential only. Relay failure must not affect local operation (RTB-29, RTB-53).
+reconnect with backoff, relay-device credential only. Relay failure does not affect local operation (RTB-29, RTB-53).
 
-**E2. Envelope mapping** (6b#23) `RelayEnvelopeMapper.kt`. Frame to `RequestEnvelope` and back with matching
-`correlation_id`; malformed frames never reach `BridgeService`.
+**E4. Frames and replay guard** (6b#23, 6b#25) `RelayEnvelopeMapper.kt`, `ReplayGuard.kt`. Add navigation command and
+reply frames that carry no principal assertion. Keep the device frame `seq` window (64) and 300 second expiry;
+duplicates and expired frames are dropped. Malformed frames never reach the adapter. Depends on A11.
 
-**E3. Principal mapping** (6b#24) `RelayPrincipalMapper.kt`. The assertion is input only and never grants
-authorization; the phone re-runs the policy engine (RTB-32).
+**E5. Principal** (6b#24) `RelayPrincipalMapper.kt` (XGN-02 §4.2). On the navigation path the phone derives principal,
+session, `request_id` and timestamps from its own session record. The agent and relay supply none of them.
 
-**E4. Replay guard** (6b#25) `ReplayGuard.kt`. Monotonic `seq` per device session; duplicate or out-of-window values
-dropped; `expires_at` enforced so nothing executes after reconnect (RTB-47). Depends on A7.
+**E6. Surface map and pairing** (XGN-03, XGN-05, XGN-14). Phone-side. The first open returns onboarding, the
+capabilities for this grant, "pairing pending", and a status link. A six-digit challenge shows on the device only and
+is never sent to the agent; the operator confirms there. Panels have five blocks (state, task, draft, last result,
+commands), are generated by Gitana, and mark repository content as data. This replaces the chat PIN in Navigation
+Transport §7.
+
+**E7. Commands and drafts** (XGN-07, XGN-28). Phone-side: `new`, `set`, `append`, `replace`, `unset`, `preview`,
+`show`, `commit`, `cancel`, `status`. One draft and one unresolved request per session; 64 KB draft, 2 KB data per
+command, 900 character URL, 512 commands per session. A per-session command `seq` advances only on accepted commands.
+`preview` returns sizes, normalized path and digest, and records the current file and branch head. `commit` needs that
+digest; the approved content is the dispatched content, and a moved head or file fails the write. Reads are links
+within the grant. No command cancels a committed request.
+
+**E8. Link security** (XGN-29). Single-use rolling capabilities, 10 minute lifetime. A byte-identical retry within 90
+seconds returns the reply cached on the phone, never on the relay. Any other reuse suspends the session and alerts the
+operator. Opening the bare current link consumes nothing.
+
+**E9. Verification** (XGN-20 §12, XGN-30). Prove no content or query strings are stored or logged, offline fails fast,
+and two concurrent deliveries forward exactly one. Probe each target chat app's fetch tool for composed query strings
+before enabling agent-written content for it.
+
+### Phase E departures from XGN
+
+| Area | This plan (v2) | XGN | Reason |
+|---|---|---|---|
+| Contracts and lifecycle | v2 envelope and `RequestState` | XGN envelope and states | Shared core is v2 |
+| Errors | v2 catalog plus navigation codes | XGN-23 catalog | Same |
+| Integrity | Draft and content digest, plus head and file check | Canonical envelope digest and signature (XGN-31) | Not in the v2 core |
+| Bootstrap | Gitana creates the branch after plan approval | Agent's first step is `create_branch` (XGN-DEC-047, 048) | Owner decision |
+| Steps and gates | Ordered steps; per-commit approval; pause and revoke | Configurable turn gates | Deferred |
+| `batch` | Not provided | XGN-28 | Deferred |
+| Existing pull request | v2 idempotent success (RTB-D12) | `CONFLICT` | Core behaviour |
+| Request expiry | At most 300 seconds on the relay (RTB-D17), including approval wait | 1 hour; approval 10 minutes | v2 limit |
+| Audit retention | v2 values | 400 days | v2 limit |
+| v2 relay agent POST routes | Deferred; not needed for the sample task. If enabled, they pass S5 | No equivalent route | Predates XGN |
 
 ---
 
@@ -231,26 +382,42 @@ dropped; `expires_at` enforced so nothing executes after reconnect (RTB-47). Dep
 `audit-event.v1.json`; a test attempting to attach content, a token or a body must fail; `WriteFileArgs.toString()`
 masks content in pipeline logs (RTB-09, RTB-54). Include audit retention and clear (RTB-56).
 
+**F3. Credential vault** (`bridge/vault`, all files are scaffolds). Keystore-backed GitHub token, relay-device
+credential and session secrets. Acceptance: no secret in logs or plain storage.
+
+**F4. Storage** (`bridge/storage`, all files are scaffolds). Policy store and metadata-only audit and request records.
+Resolve B11 against RTB-07 before persisting any request record.
+
+**F5. Operator app** (`app:ui`, `app:service`, screens are scaffolds). Credential and repository setup, task entry, plan
+review and approval, bootstrap status, copy URL or bearer, pairing confirmation, request approval with diff,
+pause, revoke, audit view, and the foreground service that keeps both paths alive. Depends on S2, S4, S6.
+
 ---
 
 ## Phase G: Verification and close-out
 
-**G1. Path A end-to-end** (6a#11, 6b#28). Four-step sample task against a mocked GitHub server with
-`example-org/sandbox` approved. All four reach `SUCCEEDED`; `create_pull_request` passes through approval; audit
-records exist; no content, token or body in logs.
+**G1. Path A end-to-end** (6a#11, 6b#28). Against a mocked GitHub server: create the sample task, approve the plan,
+bootstrap, pair, then with the session bearer `read_file` on `TASK.md`, `write_file` on
+`tasks/<task-id>/hello.md` and `create_pull_request`, approving both mutations; complete the session. All reach
+`SUCCEEDED`; audit records exist; no content, token, capability or body in logs.
 
-**G2. Path B end-to-end** (6a#11, 6b#29). Same task over a fake relay. A relay assertion claiming broader scope
-cannot widen access.
+**G2. Path B end-to-end** (6a#11, 6b#29). The same flow using only HTTPS GET from the session URL, through the real
+Worker run locally and the phone navigation adapter. A test client follows only links and command templates it was
+given. Nothing in a delivery can widen the grant.
 
-**G3. The five failure paths** (6a#11, 6b#29), on both paths where applicable: unapproved repository; write to a
-protected branch; expired request (including after reconnect); user declines approval; lost acknowledgement on
-`write_file` (`OUTCOME_UNKNOWN`, `RECONCILING`, then `SUCCEEDED` if the commit is present or `FAILED` if absent).
-Add duplicate `seq` and replay of a finished `request_id`.
+**G3. Failure paths** (6a#11, 6b#29), on both paths where applicable: unapproved plan yields no session; bootstrap
+failure yields no URL; request before pairing; unapproved repository; path or branch outside the grant; write to a
+protected branch; expired request (including after reconnect); operator declines; revoked or expired session; lost
+acknowledgement on `write_file` (`OUTCOME_UNKNOWN`, `RECONCILING`, then `SUCCEEDED` or `FAILED`); replay of a finished
+`request_id`. Relay only: duplicate frame `seq`, reused link, command `seq` gap, device offline.
 
 **G4. Close out** (6a#12). Tick every exit-task the work closes; add a note to `docs/…exit_tasks.md` and
 `bridge/README.md` that the sample task is executable on both paths once a device is provisioned. Remove the
 "scaffold state" claims in the README that are no longer true. Leave only pure device validation (foreground
 service type, Keystore, Doze, loopback reachability, `androidTest` suites) as open.
+
+**G5. Device and live check.** On a provisioned phone, with a private test repository and a deployed relay, run G2 once
+with a real chat app that passed E9. Record the evidence.
 
 ---
 
@@ -267,12 +434,24 @@ service type, Keystore, Doze, loopback reachability, `androidTest` suites) as op
 | C1 | A5 |
 | C2 | A4 |
 | D1, D3 | A2 |
-| E4 | A7 |
-| D1 to D3, E1 to E4, C1, C2 | B1 (all call `BridgeService.submit`) |
-| F1 | B1 to B10, C1, D1 to D3, E1 to E4 |
-| G1 to G3 | F1, F2 |
+| S1, S2 | A9 |
+| S3 | S2, B1, B9, C1, F3 |
+| S4, S6 | A10, S3 |
+| S5 | S4, B5 |
+| E1, E2 | A11, A12 |
+| E3, E4 | A11 |
+| E5, E6 | S4, E4 |
+| E7, E8 | E6, S5 |
+| E9 | E1 to E8 |
+| D1 to D3, E5 to E8, C1, C2 | B1 (all call `BridgeService.submit`) |
+| F1 | B1 to B11, C1, D1 to D3, S1 to S6, E1 to E8, F3, F4 |
+| F5 | S2, S4, S6 |
+| G1 | F1, F2, F5 |
+| G2, G3 | G1, E9 |
+| G4 | G2, G3 |
+| G5 | G4, deployed relay, provisioned phone |
 
-Safe to parallelize once Phase A and B1 are done: Phase C, Phase D and Phase E. A8 and the spec-only parts of A1 to A7
+Safe to parallelize once A1 to A12 and B1 are done: Phase C, Phase D, S1 to S2 and E1 to E4. A8 and the spec-only parts of A1 to A7
 can start immediately.
 
 ## Open decisions that need the owner (not code)
@@ -281,4 +460,9 @@ can start immediately.
 2. Whether `CANCELLED` and `MANUAL_REVIEW` edges and the cancel route are in scope (A3).
 3. `create_pull_request` head syntax and existing-PR behaviour (A5).
 4. Repository name canonicalization and rename handling (A6).
-5. Ktor and OkHttp WebSocket dependency and version choices (D1, E1).
+5. Ktor and OkHttp WebSocket dependency and version choices (D1, E3).
+6. Task directory default, and whether `TASK.md` stays in the pull request (A9).
+7. Session bearer on Path A replacing the long-lived local bearer (A10).
+8. Whether 300 seconds is long enough for approval on the relay path (A11).
+9. Deferring the v2 relay agent POST routes (A11).
+10. Relay service location and deployment (A12).
